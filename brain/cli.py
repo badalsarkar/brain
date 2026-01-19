@@ -457,6 +457,61 @@ def show_task(task_id):
     console.print()
 
 
+@tasks_group.command(name="edit")
+@click.argument("task_id")
+@click.option("--title", help="New title")
+@click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "done", "blocked"]))
+@click.option("--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]))
+@click.option("--due", help="New due date")
+@click.option("--tags", "-t", multiple=True, help="New tags (replaces existing)")
+@click.option("--project", help="New project")
+@click.option("--description", "-d", is_flag=True, help="Edit description interactively")
+def edit_task(task_id, title, status, priority, due, tags, project, description):
+    """Edit a task."""
+    task = tasks.get_task(task_id)
+
+    if not task:
+        console.print(f"[red]Task {task_id} not found.[/red]")
+        sys.exit(1)
+
+    # Interactive description editing
+    new_description = None
+    if description:
+        new_description = click.edit(task.description)
+        if new_description is not None:
+            new_description = new_description.strip()
+
+    updated_task = tasks.update_task(
+        task_id,
+        title=title,
+        status=status,
+        priority=priority,
+        due_date=due,
+        tags=list(tags) if tags else None,
+        project=project,
+        description=new_description,
+    )
+
+    if updated_task:
+        console.print(f"[bold green]✓ Task {task_id} updated![/bold green]")
+        if title:
+            console.print(f"Title: {updated_task.title}")
+        if status:
+            console.print(f"Status: {updated_task.status.value}")
+        if priority:
+            console.print(f"Priority: {updated_task.priority.value}")
+        if due:
+            due_str = updated_task.due_date.strftime('%Y-%m-%d') if updated_task.due_date else "None"
+            console.print(f"Due: {due_str}")
+        if tags:
+            console.print(f"Tags: {', '.join(updated_task.tags)}")
+        if project:
+            console.print(f"Project: {updated_task.project}")
+    else:
+        # Should be covered by initial check, but just in case
+        console.print(f"[red]Failed to update task {task_id}.[/red]")
+
+
 # ============================================================================
 # SEARCH COMMAND
 # ============================================================================
