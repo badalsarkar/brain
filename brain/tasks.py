@@ -18,6 +18,7 @@ def create_task(
     due_date: Optional[str] = None,
     tags: Optional[list[str]] = None,
     project: Optional[str] = None,
+    assignee: Optional[str] = None,
 ) -> Task:
     """Create a new task.
 
@@ -28,6 +29,7 @@ def create_task(
         due_date: Due date (string or datetime)
         tags: List of tags
         project: Project name
+        assignee: Assigned person
 
     Returns:
         Created task
@@ -52,6 +54,7 @@ def create_task(
         due_date=parsed_due_date,
         tags=tags,
         project=project,
+        assignee=assignee,
     )
 
     # Save to storage
@@ -59,11 +62,8 @@ def create_task(
 
     return task
 
-
 import re
 from dateutil.relativedelta import relativedelta
-
-# ... imports ...
 
 def parse_due_date(date_str: str) -> Optional[datetime]:
     """Parse due date from various formats.
@@ -110,7 +110,6 @@ def parse_due_date(date_str: str) -> Optional[datetime]:
     try:
         dt = date_parser.parse(date_str, fuzzy=True)
         # If the parsed date is in the past (and no year specified), usually assume future
-        # complex logic omitted for brevity, respecting dateutil's behavior
         return dt.replace(hour=23, minute=59, second=59)
     except:
         return None
@@ -128,7 +127,6 @@ def get_task(task_id: str) -> Optional[Task]:
     storage = get_storage()
     return storage.load_task(task_id)
 
-
 def update_task(
     task_id: str,
     title: Optional[str] = None,
@@ -138,6 +136,7 @@ def update_task(
     due_date: Optional[str] = None,
     tags: Optional[list[str]] = None,
     project: Optional[str] = None,
+    assignee: Optional[str] = None,
 ) -> Optional[Task]:
     """Update an existing task.
 
@@ -150,6 +149,7 @@ def update_task(
         due_date: New due date (optional)
         tags: New tags (optional)
         project: New project (optional)
+        assignee: New assignee (optional)
 
     Returns:
         Updated task or None if not found
@@ -177,6 +177,8 @@ def update_task(
         task.tags = tags
     if project is not None:
         task.project = project
+    if assignee is not None:
+        task.assignee = assignee
 
     # Save changes
     storage.save_task(task)

@@ -17,6 +17,7 @@ def create_note(
     category: Optional[str] = None,
     project: Optional[str] = None,
     auto_tag: bool = False,
+    extra: Optional[dict] = None,
 ) -> Note:
     """Create a new note.
 
@@ -27,6 +28,7 @@ def create_note(
         category: Category
         project: Project name
         auto_tag: Use AI to generate additional tags
+        extra: Additional metadata
 
     Returns:
         Created note
@@ -55,6 +57,7 @@ def create_note(
         tags=tags,
         category=category,
         project=project,
+        extra=extra or {},
     )
 
     # Save to storage

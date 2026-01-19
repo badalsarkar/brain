@@ -36,13 +36,14 @@ class Note(BaseModel):
     tags: list[str] = Field(default_factory=list)
     category: str = "general"
     project: Optional[str] = None
+    extra: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     file_path: Optional[Path] = None
 
     def to_frontmatter_dict(self) -> dict:
         """Convert to dictionary for YAML frontmatter."""
-        return {
+        base_dict = {
             "id": self.id,
             "title": self.title,
             "tags": self.tags,
@@ -51,10 +52,19 @@ class Note(BaseModel):
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
+        # Merge extra fields
+        base_dict.update(self.extra)
+        return base_dict
 
     @classmethod
     def from_frontmatter(cls, metadata: dict, content: str, file_path: Path) -> "Note":
         """Create Note from frontmatter metadata and content."""
+        # separate known fields from extra
+        known_fields = {
+            "id", "title", "tags", "category", "project", "created_at", "updated_at"
+        }
+        extra = {k: v for k, v in metadata.items() if k not in known_fields}
+        
         return cls(
             id=metadata.get("id", uuid4().hex[:8]),
             title=metadata.get("title", "Untitled"),
@@ -62,6 +72,7 @@ class Note(BaseModel):
             tags=metadata.get("tags", []),
             category=metadata.get("category", "general"),
             project=metadata.get("project"),
+            extra=extra,
             created_at=datetime.fromisoformat(metadata["created_at"])
             if "created_at" in metadata
             else datetime.now(),
@@ -83,6 +94,7 @@ class Task(BaseModel):
     due_date: Optional[datetime] = None
     tags: list[str] = Field(default_factory=list)
     project: Optional[str] = None
+    assignee: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     completed_at: Optional[datetime] = None
@@ -98,6 +110,7 @@ class Task(BaseModel):
             "due_date": self.due_date.isoformat() if self.due_date else None,
             "tags": self.tags,
             "project": self.project,
+            "assignee": self.assignee,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
@@ -117,6 +130,7 @@ class Task(BaseModel):
             else None,
             tags=metadata.get("tags", []),
             project=metadata.get("project"),
+            assignee=metadata.get("assignee"),
             created_at=datetime.fromisoformat(metadata["created_at"])
             if "created_at" in metadata
             else datetime.now(),
@@ -151,6 +165,7 @@ class MetadataIndex(BaseModel):
     tags: dict[str, list[str]] = Field(default_factory=dict)  # tag -> [ids]
     projects: dict[str, list[str]] = Field(default_factory=dict)  # project -> [ids]
     categories: dict[str, list[str]] = Field(default_factory=dict)  # category -> [ids]
+    assignees: dict[str, list[str]] = Field(default_factory=dict)  # assignee -> [task_ids]
     last_updated: datetime = Field(default_factory=datetime.now)
 
     def add_note(self, note: Note) -> None:
@@ -195,6 +210,7 @@ class MetadataIndex(BaseModel):
             "due_date": task.due_date.isoformat() if task.due_date else None,
             "tags": task.tags,
             "project": task.project,
+            "assignee": task.assignee,
             "file_path": str(task.file_path) if task.file_path else None,
             "created_at": task.created_at.isoformat(),
         }
@@ -212,6 +228,13 @@ class MetadataIndex(BaseModel):
                 self.projects[task.project] = []
             if task.id not in self.projects[task.project]:
                 self.projects[task.project].append(task.id)
+
+        # Update assignee index
+        if task.assignee:
+            if task.assignee not in self.assignees:
+                self.assignees[task.assignee] = []
+            if task.id not in self.assignees[task.assignee]:
+                self.assignees[task.assignee].append(task.id)
 
         self.last_updated = datetime.now()
 
