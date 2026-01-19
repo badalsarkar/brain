@@ -457,6 +457,10 @@ def show_task(task_id):
     console.print()
 
 
+import shutil
+
+# ... existing code ...
+
 @tasks_group.command(name="edit")
 @click.argument("task_id")
 @click.option("--title", help="New title")
@@ -467,12 +471,39 @@ def show_task(task_id):
 @click.option("--project", help="New project")
 @click.option("--description", "-d", is_flag=True, help="Edit description interactively")
 def edit_task(task_id, title, status, priority, due, tags, project, description):
-    """Edit a task."""
+    """Edit a task.
+    
+    If no options are provided, opens the task file in an editor (NVIM preferred).
+    """
     task = tasks.get_task(task_id)
 
     if not task:
         console.print(f"[red]Task {task_id} not found.[/red]")
         sys.exit(1)
+
+    # Check if any specific fields are being updated
+    flags_provided = any([title, status, priority, due, tags, project, description])
+
+    if not flags_provided:
+        # Open in editor (NVIM preferred as requested)
+        if not task.file_path or not task.file_path.exists():
+            console.print("[red]Error: Task file not found on disk.[/red]")
+            sys.exit(1)
+
+        editor = "nvim" if shutil.which("nvim") else None
+        if not editor and not os.environ.get("EDITOR"):
+            console.print("[yellow]NVIM not found and EDITOR not set. Using default.[/yellow]")
+        
+        click.edit(filename=str(task.file_path), editor=editor)
+        
+        # Reload and save to update index and potentially rename file
+        storage = get_storage()
+        # Re-read the file to get changes
+        updated_task_obj = storage._read_task_file(task.file_path)
+        storage.save_task(updated_task_obj)
+        
+        console.print(f"[bold green]✓ Task {task_id} updated from file![/bold green]")
+        return
 
     # Interactive description editing
     new_description = None
