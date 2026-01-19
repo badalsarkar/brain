@@ -172,9 +172,34 @@ def list_notes(tags, category, project, limit):
 
 
 @notes_group.command(name="show")
-@click.argument("note_id")
+@click.argument("note_id", required=False)
 def show_note(note_id):
     """Show a note."""
+    if not note_id:
+        # Interactive selection
+        import questionary
+        
+        recent_notes = notes.list_notes(limit=20)
+        if not recent_notes:
+            console.print("[dim]No notes found.[/dim]")
+            return
+
+        choices = []
+        for note in recent_notes:
+            created = note.created_at.strftime("%Y-%m-%d")
+            choices.append(questionary.Choice(
+                title=f"{note.title} ({note.id}) - {created}",
+                value=note.id
+            ))
+            
+        note_id = questionary.select(
+            "Select a note to view:",
+            choices=choices
+        ).ask()
+        
+        if not note_id:
+            return
+
     note = notes.get_note(note_id)
 
     if not note:
