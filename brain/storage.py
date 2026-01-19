@@ -374,6 +374,72 @@ class Storage:
         matching_notes.sort(key=lambda n: n.created_at, reverse=True)
         return matching_notes
 
+    def search_all(
+        self,
+        query: Optional[str] = None,
+        tags: Optional[list[str]] = None,
+        project: Optional[str] = None,
+    ) -> tuple[list[Note], list[Task]]:
+        """Search notes and tasks.
+
+        Args:
+            query: Search query string
+            tags: Filter by tags
+            project: Filter by project
+
+        Returns:
+            Tuple of (notes, tasks)
+        """
+        # Start with all IDs
+        note_ids = set(self.index.notes.keys())
+        task_ids = set(self.index.tasks.keys())
+
+        # Filter by tags
+        if tags:
+            tag_ids = set()
+            for tag in tags:
+                if tag in self.index.tags:
+                    tag_ids.update(self.index.tags[tag])
+            note_ids &= tag_ids
+            task_ids &= tag_ids
+
+        # Filter by project
+        if project and project in self.index.projects:
+            project_ids = set(self.index.projects[project])
+            note_ids &= project_ids
+            task_ids &= project_ids
+
+        # Load objects
+        notes = []
+        for note_id in note_ids:
+            note = self.load_note(note_id)
+            if note:
+                notes.append(note)
+
+        tasks = []
+        for task_id in task_ids:
+            task = self.load_task(task_id)
+            if task:
+                tasks.append(task)
+
+        # Filter by query if provided
+        if query:
+            query_lower = query.lower()
+            notes = [
+                n for n in notes
+                if query_lower in n.title.lower() or query_lower in n.content.lower()
+            ]
+            tasks = [
+                t for t in tasks
+                if query_lower in t.title.lower() or query_lower in t.description.lower()
+            ]
+
+        # Sort results
+        notes.sort(key=lambda n: n.created_at, reverse=True)
+        tasks.sort(key=lambda t: (t.due_date or datetime.max), reverse=False)
+
+        return notes, tasks
+
     def rebuild_index(self) -> None:
         """Rebuild index by scanning all files."""
         self.index = MetadataIndex()

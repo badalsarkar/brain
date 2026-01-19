@@ -183,7 +183,11 @@ def list_notes(
         List of notes
     """
     storage = get_storage()
-    notes = storage.list_notes(tags=tags, category=category, project=project)
+    notes = storage.list_notes(
+        tags=tags,
+        category=category,
+        project=project
+    )
 
     if limit:
         notes = notes[:limit]

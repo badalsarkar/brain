@@ -209,7 +209,11 @@ def list_tasks(
         List of tasks
     """
     storage = get_storage()
-    tasks = storage.list_tasks(status=status, tags=tags, project=project)
+    tasks = storage.list_tasks(
+        status=status,
+        tags=tags,
+        project=project
+    )
 
     if limit:
         tasks = tasks[:limit]

@@ -85,6 +85,7 @@ def note(content, interactive, from_stdin, tags, category, project, no_ai):
         project_input = click.prompt("Project (optional)", default="")
 
         tags_list = [t.strip() for t in tags_input.split(",") if t.strip()]
+        
         created_note = notes.create_note(
             title=title,
             content=content_text,
@@ -98,7 +99,18 @@ def note(content, interactive, from_stdin, tags, category, project, no_ai):
         created_note = notes.capture_from_stdin(auto_tag=auto_tag)
     elif content:
         # Quick capture
-        created_note = notes.quick_capture(content, auto_tag=auto_tag)
+        lines = content.split("\n", 1)
+        title = lines[0].strip()
+        body = lines[1].strip() if len(lines) > 1 else ""
+        
+        created_note = notes.create_note(
+            title=title, 
+            content=body, 
+            tags=list(tags) if tags else None,
+            category=category,
+            project=project,
+            auto_tag=auto_tag
+        )
     else:
         console.print("[red]Error: Provide content, use --interactive, or --from-stdin[/red]")
         sys.exit(1)
@@ -418,6 +430,63 @@ def show_task(task_id):
         md = Markdown(task.description)
         console.print(md)
     console.print()
+
+
+# ============================================================================
+# SEARCH COMMAND
+# ============================================================================
+
+
+@cli.command()
+@click.argument("query", required=False)
+@click.option("--tags", "-t", multiple=True, help="Filter by tags")
+@click.option("--project", "-p", help="Filter by project")
+def search(query, tags, project):
+    """Search notes and tasks globally."""
+    storage = get_storage()
+    notes_list, tasks_list = storage.search_all(
+        query=query,
+        tags=list(tags) if tags else None,
+        project=project,
+    )
+
+    if not notes_list and not tasks_list:
+        console.print("[dim]No matching results found.[/dim]")
+        return
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Type", width=6)
+    table.add_column("ID", style="dim", width=8)
+    table.add_column("Title", style="bold")
+    table.add_column("Project", width=15)
+    table.add_column("Tags", width=20)
+    table.add_column("Status/Date", width=12)
+
+    # Add tasks first (usually more actionable)
+    for task in tasks_list:
+        table.add_row(
+            "[blue]TASK[/blue]",
+            task.id,
+            task.title[:40],
+            task.project or "-",
+            ", ".join(task.tags[:2]),
+            f"[{'green' if task.status.value == 'done' else 'yellow'}]{task.status.value}[/]",
+        )
+
+    # Add notes
+    for note in notes_list:
+        table.add_row(
+            "[green]NOTE[/green]",
+            note.id,
+            note.title[:40],
+            note.project or "-",
+            ", ".join(note.tags[:2]),
+            note.created_at.strftime("%Y-%m-%d"),
+        )
+
+    console.print()
+    console.print(table)
+    console.print(f"\n[dim]Found {len(notes_list)} notes and {len(tasks_list)} tasks[/dim]\n")
 
 
 # ============================================================================
