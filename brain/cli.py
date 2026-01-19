@@ -568,6 +568,90 @@ def sync():
         console.print(f"[red]✗ {message}[/red]")
 
 
+@cli.command()
+@click.option("--sort", type=click.Choice(["name", "count"]), default="count", help="Sort by name or count")
+def tags(sort):
+    """List all tags."""
+    storage = get_storage()
+    if not storage.index.tags:
+        console.print("[dim]No tags found.[/dim]")
+        return
+
+    # Prepare data
+    tag_data = []
+    for tag, ids in storage.index.tags.items():
+        notes_count = 0
+        tasks_count = 0
+        for item_id in ids:
+            if item_id in storage.index.notes:
+                notes_count += 1
+            elif item_id in storage.index.tasks:
+                tasks_count += 1
+        
+        tag_data.append((tag, notes_count, tasks_count, len(ids)))
+
+    # Sort
+    if sort == "name":
+        tag_data.sort(key=lambda x: x[0])
+    else:
+        tag_data.sort(key=lambda x: x[3], reverse=True)
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Tag", style="bold")
+    table.add_column("Notes", justify="right")
+    table.add_column("Tasks", justify="right")
+    table.add_column("Total", justify="right")
+
+    for tag, n_count, t_count, total in tag_data:
+        table.add_row(tag, str(n_count), str(t_count), str(total))
+
+    console.print()
+    console.print(table)
+    console.print(f"\n[dim]Total: {len(tag_data)} tags[/dim]\n")
+
+
+@cli.command()
+@click.option("--sort", type=click.Choice(["name", "count"]), default="count", help="Sort by name or count")
+def projects(sort):
+    """List all projects."""
+    storage = get_storage()
+    if not storage.index.projects:
+        console.print("[dim]No projects found.[/dim]")
+        return
+
+    # Prepare data
+    project_data = []
+    for project, ids in storage.index.projects.items():
+        notes_count = 0
+        tasks_count = 0
+        for item_id in ids:
+            if item_id in storage.index.notes:
+                notes_count += 1
+            elif item_id in storage.index.tasks:
+                tasks_count += 1
+        
+        project_data.append((project, notes_count, tasks_count, len(ids)))
+
+    # Sort
+    if sort == "name":
+        project_data.sort(key=lambda x: x[0])
+    else:
+        project_data.sort(key=lambda x: x[3], reverse=True)
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Project", style="bold")
+    table.add_column("Notes", justify="right")
+    table.add_column("Tasks", justify="right")
+    table.add_column("Total", justify="right")
+
+    for project, n_count, t_count, total in project_data:
+        table.add_row(project, str(n_count), str(t_count), str(total))
+
+    console.print()
+    console.print(table)
+    console.print(f"\n[dim]Total: {len(project_data)} projects[/dim]\n")
+
+
 def main():
     """Main entry point."""
     cli()
