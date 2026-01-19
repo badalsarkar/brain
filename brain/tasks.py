@@ -5,10 +5,10 @@ from typing import Optional
 
 from dateutil import parser as date_parser
 
-from brainflow.ai.factory import get_ai_provider
-from brainflow.config import get_config
-from brainflow.models import Task, TaskStatus, TaskPriority
-from brainflow.storage import get_storage
+from brain.ai.factory import get_ai_provider
+from brain.config import get_config
+from brain.models import Task, TaskStatus, TaskPriority
+from brain.storage import get_storage
 
 
 def create_task(

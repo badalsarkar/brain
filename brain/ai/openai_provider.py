@@ -1,33 +1,34 @@
-"""Anthropic provider implementation."""
+"""OpenAI provider implementation."""
 
 from typing import List
 
-from anthropic import Anthropic
+from openai import OpenAI
+from openai.types.chat import ChatCompletion
 
-from brainflow.ai import AIProvider
-from brainflow.config import get_config
-from brainflow.models import Task
+from brain.ai import AIProvider
+from brain.config import get_config
+from brain.models import Task
 
 
-class AnthropicProvider(AIProvider):
-    """Anthropic (Claude) implementation of AI provider."""
+class OpenAIProvider(AIProvider):
+    """OpenAI implementation of AI provider."""
 
     def __init__(self):
-        """Initialize Anthropic provider."""
+        """Initialize OpenAI provider."""
         config = get_config()
-        self.api_key = config.anthropic_api_key
-        self.model = config.anthropic_model
+        self.api_key = config.openai_api_key
+        self.model = config.openai_model
         self.client = None
 
         if self.api_key:
-            self.client = Anthropic(api_key=self.api_key)
+            self.client = OpenAI(api_key=self.api_key)
 
     def is_available(self) -> bool:
-        """Check if Anthropic is available."""
+        """Check if OpenAI is available."""
         return self.client is not None
 
     def _call_api(self, system_prompt: str, user_prompt: str) -> str:
-        """Call Anthropic API.
+        """Call OpenAI API.
 
         Args:
             system_prompt: System message
@@ -40,19 +41,22 @@ class AnthropicProvider(AIProvider):
             return ""
 
         try:
-            response = self.client.messages.create(
+            response: ChatCompletion = self.client.chat.completions.create(
                 model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.7,
                 max_tokens=500,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
             )
-            return response.content[0].text
+            return response.choices[0].message.content or ""
         except Exception as e:
-            print(f"Anthropic API error: {e}")
+            print(f"OpenAI API error: {e}")
             return ""
 
     def generate_tags(self, content: str, max_tags: int = 5) -> List[str]:
-        """Generate tags using Claude."""
+        """Generate tags using OpenAI."""
         system_prompt = (
             "You are a helpful assistant that generates relevant tags for text content. "
             f"Generate up to {max_tags} concise, lowercase tags separated by commas."
@@ -68,7 +72,7 @@ class AnthropicProvider(AIProvider):
         return tags[:max_tags]
 
     def summarize(self, content: str, max_length: int = 200) -> str:
-        """Summarize content using Claude."""
+        """Summarize content using OpenAI."""
         system_prompt = (
             "You are a helpful assistant that creates concise summaries. "
             f"Create a summary of maximum {max_length} characters."
@@ -78,7 +82,7 @@ class AnthropicProvider(AIProvider):
         return self._call_api(system_prompt, user_prompt)
 
     def suggest_focus(self, tasks: List[Task]) -> str:
-        """Suggest focus using Claude."""
+        """Suggest focus using OpenAI."""
         if not tasks:
             return "No tasks to analyze."
 
@@ -102,7 +106,7 @@ class AnthropicProvider(AIProvider):
         return self._call_api(system_prompt, user_prompt)
 
     def extract_tasks(self, content: str) -> List[str]:
-        """Extract tasks using Claude."""
+        """Extract tasks using OpenAI."""
         system_prompt = (
             "You are a helpful assistant that extracts actionable tasks from text. "
             "Return only the task descriptions, one per line, without numbering or bullets."

@@ -1,4 +1,4 @@
-"""Configuration management for brainflow."""
+"""Configuration management for brain."""
 
 import os
 from pathlib import Path
@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
 
 
-class BrainflowConfig(BaseSettings):
+class BrainConfig(BaseSettings):
     """Brainflow configuration with environment variable support."""
 
     model_config = SettingsConfigDict(
@@ -20,7 +20,7 @@ class BrainflowConfig(BaseSettings):
     )
 
     # Data directory
-    brainflow_data_dir: Path = Field(
+    brain_data_dir: Path = Field(
         default_factory=lambda: Path.home() / "Documents" / "brain"
     )
 
@@ -49,17 +49,17 @@ class BrainflowConfig(BaseSettings):
     @property
     def notes_dir(self) -> Path:
         """Directory for notes."""
-        return self.brainflow_data_dir / "notes"
+        return self.brain_data_dir / "notes"
 
     @property
     def tasks_dir(self) -> Path:
         """Directory for tasks."""
-        return self.brainflow_data_dir / "tasks"
+        return self.brain_data_dir / "tasks"
 
     @property
     def metadata_dir(self) -> Path:
         """Directory for metadata."""
-        return self.brainflow_data_dir / ".brainflow"
+        return self.brain_data_dir / ".brain"
 
     @property
     def index_file(self) -> Path:
@@ -73,7 +73,7 @@ class BrainflowConfig(BaseSettings):
 
     def ensure_directories(self) -> None:
         """Create necessary directories if they don't exist."""
-        self.brainflow_data_dir.mkdir(parents=True, exist_ok=True)
+        self.brain_data_dir.mkdir(parents=True, exist_ok=True)
         self.notes_dir.mkdir(parents=True, exist_ok=True)
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_dir.mkdir(parents=True, exist_ok=True)
@@ -82,7 +82,7 @@ class BrainflowConfig(BaseSettings):
         """Save current configuration to user config file."""
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
         config_data = {
-            "brainflow_data_dir": str(self.brainflow_data_dir),
+            "brain_data_dir": str(self.brain_data_dir),
             "ai_provider": self.ai_provider,
             "git_auto_commit": self.git_auto_commit,
             "default_tags": self.default_tags,
@@ -92,7 +92,7 @@ class BrainflowConfig(BaseSettings):
             yaml.dump(config_data, f, default_flow_style=False)
 
     @classmethod
-    def load_config(cls) -> "BrainflowConfig":
+    def load_config(cls) -> "BrainConfig":
         """Load configuration from file and environment."""
         config = cls()
 
@@ -105,7 +105,7 @@ class BrainflowConfig(BaseSettings):
             for key, value in user_config.items():
                 if hasattr(config, key):
                     # Convert string paths to Path objects
-                    if key == "brainflow_data_dir" and isinstance(value, str):
+                    if key == "brain_data_dir" and isinstance(value, str):
                         value = Path(value)
                     setattr(config, key, value)
 
@@ -113,19 +113,19 @@ class BrainflowConfig(BaseSettings):
 
 
 # Global config instance
-_config: Optional[BrainflowConfig] = None
+_config: Optional[BrainConfig] = None
 
 
-def get_config() -> BrainflowConfig:
+def get_config() -> BrainConfig:
     """Get the global configuration instance."""
     global _config
     if _config is None:
-        _config = BrainflowConfig.load_config()
+        _config = BrainConfig.load_config()
     return _config
 
 
-def reload_config() -> BrainflowConfig:
+def reload_config() -> BrainConfig:
     """Reload configuration from files and environment."""
     global _config
-    _config = BrainflowConfig.load_config()
+    _config = BrainConfig.load_config()
     return _config

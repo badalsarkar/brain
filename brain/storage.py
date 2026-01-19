@@ -7,9 +7,9 @@ from typing import Optional
 
 import frontmatter
 
-from brainflow.config import get_config
-from brainflow.models import Note, Task, MetadataIndex
-from brainflow.git_utils import get_git_manager
+from brain.config import get_config
+from brain.models import Note, Task, MetadataIndex
+from brain.git_utils import get_git_manager
 
 
 class Storage:

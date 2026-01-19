@@ -52,4 +52,4 @@ dmypy.json
 Thumbs.db
 
 # Brainflow specific
-.brainflow/
+.brain/

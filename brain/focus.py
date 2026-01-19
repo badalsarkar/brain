@@ -8,9 +8,9 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
-from brainflow.ai.factory import get_ai_provider
-from brainflow.models import Task
-from brainflow.tasks import get_tasks_by_timeframe, list_tasks
+from brain.ai.factory import get_ai_provider
+from brain.models import Task
+from brain.tasks import get_tasks_by_timeframe, list_tasks
 
 
 def show_focus_view(use_ai: bool = True) -> None:

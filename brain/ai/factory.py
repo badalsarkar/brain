@@ -2,11 +2,11 @@
 
 from typing import Optional
 
-from brainflow.ai import AIProvider
-from brainflow.ai.openai_provider import OpenAIProvider
-from brainflow.ai.anthropic_provider import AnthropicProvider
-from brainflow.ai.ollama_provider import OllamaProvider
-from brainflow.config import get_config
+from brain.ai import AIProvider
+from brain.ai.openai_provider import OpenAIProvider
+from brain.ai.anthropic_provider import AnthropicProvider
+from brain.ai.ollama_provider import OllamaProvider
+from brain.config import get_config
 
 
 class NoOpProvider(AIProvider):

@@ -4,10 +4,10 @@ import sys
 from datetime import datetime
 from typing import Optional
 
-from brainflow.ai.factory import get_ai_provider
-from brainflow.config import get_config
-from brainflow.models import Note
-from brainflow.storage import get_storage
+from brain.ai.factory import get_ai_provider
+from brain.config import get_config
+from brain.models import Note
+from brain.storage import get_storage
 
 
 def create_note(

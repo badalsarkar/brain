@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from brainflow.models import Task
+from brain.models import Task
 
 
 class AIProvider(ABC):

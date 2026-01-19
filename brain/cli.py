@@ -1,4 +1,4 @@
-"""Command-line interface for brainflow."""
+"""Command-line interface for brain."""
 
 import sys
 from pathlib import Path
@@ -8,12 +8,12 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
 
-from brainflow import __version__
-from brainflow.config import get_config, reload_config
-from brainflow.storage import get_storage
-from brainflow.git_utils import get_git_manager
-from brainflow import notes, tasks
-from brainflow.focus import show_focus_view, show_stats
+from brain import __version__
+from brain.config import get_config, reload_config
+from brain.storage import get_storage
+from brain.git_utils import get_git_manager
+from brain import notes, tasks
+from brain.focus import show_focus_view, show_stats
 
 
 console = Console()
@@ -22,7 +22,7 @@ console = Console()
 @click.group()
 @click.version_option(version=__version__)
 def cli():
-    """Brainflow - Terminal-based note-taking and work management with AI."""
+    """Brain - Terminal-based note-taking and work management with AI."""
     pass
 
 
@@ -33,14 +33,14 @@ def cli():
 
 @cli.command()
 def init():
-    """Initialize a new brainflow workspace."""
+    """Initialize a new brain workspace."""
     config = get_config()
 
-    console.print(f"\n[bold cyan]Initializing brainflow workspace...[/bold cyan]\n")
+    console.print(f"\n[bold cyan]Initializing brain workspace...[/bold cyan]\n")
 
     # Create directories
     config.ensure_directories()
-    console.print(f"✓ Created data directory: {config.brainflow_data_dir}")
+    console.print(f"✓ Created data directory: {config.brain_data_dir}")
 
     # Initialize git
     git = get_git_manager()
@@ -54,9 +54,9 @@ def init():
     console.print(f"✓ Saved configuration to: {config.config_file}")
 
     console.print(f"\n[bold green]✓ Workspace initialized successfully![/bold green]\n")
-    console.print(f"Data directory: {config.brainflow_data_dir}")
+    console.print(f"Data directory: {config.brain_data_dir}")
     console.print(f"AI Provider: {config.ai_provider}")
-    console.print(f"\nTry: [bold]brainflow note \"My first note\"[/bold]\n")
+    console.print(f"\nTry: [bold]brain note \"My first note\"[/bold]\n")
 
 
 # ============================================================================
@@ -448,8 +448,8 @@ def config():
     """Show current configuration."""
     cfg = get_config()
 
-    console.print("\n[bold cyan]Brainflow Configuration[/bold cyan]\n")
-    console.print(f"Data Directory: {cfg.brainflow_data_dir}")
+    console.print("\n[bold cyan]Brain Configuration[/bold cyan]\n")
+    console.print(f"Data Directory: {cfg.brain_data_dir}")
     console.print(f"AI Provider: {cfg.ai_provider}")
     console.print(f"Git Auto-commit: {cfg.git_auto_commit}")
     console.print(f"Config File: {cfg.config_file}")

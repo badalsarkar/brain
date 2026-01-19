@@ -1,4 +1,4 @@
-"""Git integration utilities for brainflow."""
+"""Git integration utilities for brain."""
 
 import subprocess
 from pathlib import Path
@@ -8,11 +8,11 @@ from git import Repo, InvalidGitRepositoryError
 from git.exc import GitCommandError
 from gitdb.exc import BadName
 
-from brainflow.config import get_config
+from brain.config import get_config
 
 
 class GitManager:
-    """Manage git operations for brainflow."""
+    """Manage git operations for brain."""
 
     def __init__(self, repo_path: Optional[Path] = None):
         """Initialize git manager.
@@ -20,7 +20,7 @@ class GitManager:
         Args:
             repo_path: Path to git repository. Defaults to data directory.
         """
-        self.repo_path = repo_path or get_config().brainflow_data_dir
+        self.repo_path = repo_path or get_config().brain_data_dir
         self.repo: Optional[Repo] = None
         self._init_repo()
 
@@ -34,14 +34,14 @@ class GitManager:
             if config.git_auto_commit:
                 self.repo = Repo.init(self.repo_path)
                 self._create_gitignore()
-                self.commit("Initial commit - brainflow setup")
+                self.commit("Initial commit - brain setup")
 
     def _create_gitignore(self) -> None:
         """Create .gitignore file in the data directory."""
         gitignore_path = self.repo_path / ".gitignore"
         if not gitignore_path.exists():
             gitignore_content = """# Brainflow metadata
-.brainflow/
+.brain/
 """
             gitignore_path.write_text(gitignore_content)
 

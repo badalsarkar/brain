@@ -4,9 +4,9 @@ from typing import List
 
 import ollama
 
-from brainflow.ai import AIProvider
-from brainflow.config import get_config
-from brainflow.models import Task
+from brain.ai import AIProvider
+from brain.config import get_config
+from brain.models import Task
 
 
 class OllamaProvider(AIProvider):

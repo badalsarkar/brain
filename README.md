@@ -1,4 +1,4 @@
-# Brainflow
+# Brain
 
 Terminal-based note-taking and work management system with AI integration.
 
@@ -32,7 +32,7 @@ pip install -e ".[dev]"
 
 1. **Initialize your workspace:**
    ```bash
-   brainflow init
+   brain init
    ```
 
 2. **Configure AI provider** (optional):
@@ -43,24 +43,24 @@ pip install -e ".[dev]"
 
 3. **Create your first note:**
    ```bash
-   brainflow note "My first note with some content"
+   brain note "My first note with some content"
    ```
 
 4. **Create a task:**
    ```bash
-   brainflow task "Finish project documentation" --due tomorrow --priority high
+   brain task "Finish project documentation" --due tomorrow --priority high
    ```
 
 5. **Check your focus view:**
    ```bash
-   brainflow focus
+   brain focus
    ```
 
 ## Configuration
 
-Brainflow can be configured via:
+Brain can be configured via:
 - Environment variables (`.env` file)
-- Config file (`~/.config/brainflow/config.yaml`)
+- Config file (`~/.config/brain/config.yaml`)
 
 ### AI Providers
 
@@ -89,78 +89,78 @@ export ANTHROPIC_API_KEY=your-key-here
 
 ```bash
 # Quick capture
-brainflow note "Quick thought"
+brain note "Quick thought"
 
 # Interactive mode
-brainflow note --interactive
+brain note --interactive
 
 # From stdin (pipe from other commands)
-echo "Note content" | brainflow note --from-stdin
+echo "Note content" | brain note --from-stdin
 
 # List notes
-brainflow notes list
-brainflow notes list --tags work,important
-brainflow notes list --project myproject
+brain notes list
+brain notes list --tags work,important
+brain notes list --project myproject
 
 # Search notes
-brainflow notes search "keyword"
+brain notes search "keyword"
 
 # Show note
-brainflow notes show <note-id>
+brain notes show <note-id>
 
 # Edit note
-brainflow notes edit <note-id>
+brain notes edit <note-id>
 
 # Delete note
-brainflow notes delete <note-id>
+brain notes delete <note-id>
 ```
 
 ### Tasks
 
 ```bash
 # Create task
-brainflow task "Do something" --due tomorrow --priority high
+brain task "Do something" --due tomorrow --priority high
 
 # Interactive mode
-brainflow task --interactive
+brain task --interactive
 
 # List tasks
-brainflow tasks list
-brainflow tasks list --status todo
-brainflow tasks list --project myproject
+brain tasks list
+brain tasks list --status todo
+brain tasks list --project myproject
 
 # Time-based views
-brainflow tasks today
-brainflow tasks week
+brain tasks today
+brain tasks week
 
 # Mark as done
-brainflow tasks done <task-id>
+brain tasks done <task-id>
 
 # Show task details
-brainflow tasks show <task-id>
+brain tasks show <task-id>
 ```
 
 ### Focus & Productivity
 
 ```bash
 # Show focus dashboard (with AI suggestions)
-brainflow focus
+brain focus
 
 # Show without AI
-brainflow focus --no-ai
+brain focus --no-ai
 
 # Show productivity stats
-brainflow stats
+brain stats
 ```
 
 ### Utilities
 
 ```bash
 # Show configuration
-brainflow config
+brain config
 
 # Sync with git remote
-brainflow sync
+brain sync
 ```
 
 ## File Organization
@@ -179,7 +179,7 @@ Notes and tasks are stored as markdown files with YAML frontmatter:
 │   │   └── my-task-def456.md
 │   ├── in-progress/
 │   └── done/
-└── .brainflow/
+└── .brain/
     └── index.json
 ```
 
@@ -191,34 +191,34 @@ All files are human-readable and git-friendly!
 
 ```bash
 # Morning: Check what to focus on
-brainflow focus
+brain focus
 
 # Capture a quick idea
-brainflow note "Idea: Add dark mode to the app" --tags idea,feature
+brain note "Idea: Add dark mode to the app" --tags idea,feature
 
 # Add a task from a meeting
-brainflow task "Review PR #123" --due today --priority high --project backend
+brain task "Review PR #123" --due today --priority high --project backend
 
 # End of day: Mark tasks as done
-brainflow tasks done abc123
+brain tasks done abc123
 
 # Check stats
-brainflow stats
+brain stats
 ```
 
 ### Using AI Features
 
 ```bash
 # Auto-tag notes (enabled by default)
-brainflow note "Meeting notes about the new authentication system..."
+brain note "Meeting notes about the new authentication system..."
 # AI will automatically suggest tags like: meeting, authentication, security
 
 # Get AI focus suggestions
-brainflow focus
+brain focus
 # AI analyzes your tasks and suggests what to prioritize
 
 # Extract tasks from notes
-brainflow note "TODO: Update docs, fix bug in login, write tests"
+brain note "TODO: Update docs, fix bug in login, write tests"
 # AI can extract these as separate tasks
 ```
 
@@ -227,11 +227,11 @@ brainflow note "TODO: Update docs, fix bug in login, write tests"
 All changes are automatically committed (if `GIT_AUTO_COMMIT=true`):
 
 ```bash
-brainflow note "Important note"
+brain note "Important note"
 # Automatically commits: "Add/update note: Important note"
 
 # Manual sync with remote
-brainflow sync
+brain sync
 ```
 
 ## Development
@@ -243,12 +243,12 @@ pytest tests/ -v
 
 Format code:
 ```bash
-black brainflow/
+black brain/
 ```
 
 Type checking:
 ```bash
-mypy brainflow/
+mypy brain/
 ```
 
 ## License

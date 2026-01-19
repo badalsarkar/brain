@@ -1,4 +1,4 @@
-"""Data models for brainflow."""
+"""Data models for brain."""
 
 from datetime import datetime
 from enum import Enum
