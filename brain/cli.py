@@ -726,8 +726,8 @@ def search(query, tags, project):
     table.add_column("Type", width=6)
     table.add_column("ID", style="dim", width=8)
     table.add_column("Title", style="bold")
-    table.add_column("Project", width=15)
-    table.add_column("Tags", width=20)
+    table.add_column("Project", overflow="fold")
+    table.add_column("Tags", overflow="fold")
     table.add_column("Status/Date", width=12)
 
     # Add tasks first (usually more actionable)
@@ -735,9 +735,9 @@ def search(query, tags, project):
         table.add_row(
             "[blue]TASK[/blue]",
             task.id,
-            task.title[:40],
+            task.title,
             task.project or "-",
-            ", ".join(task.tags[:2]),
+            ", ".join(task.tags),
             f"[{'green' if task.status.value == 'done' else 'yellow'}]{task.status.value}[/]",
         )
 
@@ -746,9 +746,9 @@ def search(query, tags, project):
         table.add_row(
             "[green]NOTE[/green]",
             note.id,
-            note.title[:40],
+            note.title,
             note.project or "-",
-            ", ".join(note.tags[:2]),
+            ", ".join(note.tags),
             note.created_at.strftime("%Y-%m-%d"),
         )
 
