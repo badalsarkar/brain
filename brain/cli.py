@@ -811,88 +811,146 @@ def sync():
         console.print(f"[red]✗ {message}[/red]")
 
 
-@cli.command()
+@cli.group(invoke_without_command=True)
 @click.option("--sort", type=click.Choice(["name", "count"]), default="count", help="Sort by name or count")
-def tags(sort):
-    """List all tags."""
+@click.pass_context
+def tags(ctx, sort):
+    """Manage tags (list, rename, delete)."""
+    if ctx.invoked_subcommand is None:
+        # Default behavior: list tags
+        storage = get_storage()
+        if not storage.index.tags:
+            console.print("[dim]No tags found.[/dim]")
+            return
+
+        # Prepare data
+        tag_data = []
+        for tag, ids in storage.index.tags.items():
+            notes_count = 0
+            tasks_count = 0
+            for item_id in ids:
+                if item_id in storage.index.notes:
+                    notes_count += 1
+                elif item_id in storage.index.tasks:
+                    tasks_count += 1
+            
+            tag_data.append((tag, notes_count, tasks_count, len(ids)))
+
+        # Sort
+        if sort == "name":
+            tag_data.sort(key=lambda x: x[0])
+        else:
+            tag_data.sort(key=lambda x: x[3], reverse=True)
+
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Tag", style="bold")
+        table.add_column("Notes", justify="right")
+        table.add_column("Tasks", justify="right")
+        table.add_column("Total", justify="right")
+
+        for tag, n_count, t_count, total in tag_data:
+            table.add_row(tag, str(n_count), str(t_count), str(total))
+
+        console.print()
+        console.print(table)
+        console.print(f"\n[dim]Total: {len(tag_data)} tags[/dim]\n")
+
+
+@tags.command(name="rename")
+@click.argument("old_name")
+@click.argument("new_name")
+def tags_rename(old_name, new_name):
+    """Rename a tag."""
     storage = get_storage()
-    if not storage.index.tags:
-        console.print("[dim]No tags found.[/dim]")
-        return
-
-    # Prepare data
-    tag_data = []
-    for tag, ids in storage.index.tags.items():
-        notes_count = 0
-        tasks_count = 0
-        for item_id in ids:
-            if item_id in storage.index.notes:
-                notes_count += 1
-            elif item_id in storage.index.tasks:
-                tasks_count += 1
-        
-        tag_data.append((tag, notes_count, tasks_count, len(ids)))
-
-    # Sort
-    if sort == "name":
-        tag_data.sort(key=lambda x: x[0])
+    count = storage.rename_tag(old_name, new_name)
+    if count > 0:
+        console.print(f"[bold green]✓ Renamed tag '{old_name}' to '{new_name}' in {count} items[/bold green]")
     else:
-        tag_data.sort(key=lambda x: x[3], reverse=True)
-
-    table = Table(show_header=True, header_style="bold cyan")
-    table.add_column("Tag", style="bold")
-    table.add_column("Notes", justify="right")
-    table.add_column("Tasks", justify="right")
-    table.add_column("Total", justify="right")
-
-    for tag, n_count, t_count, total in tag_data:
-        table.add_row(tag, str(n_count), str(t_count), str(total))
-
-    console.print()
-    console.print(table)
-    console.print(f"\n[dim]Total: {len(tag_data)} tags[/dim]\n")
+        console.print(f"[yellow]Tag '{old_name}' not found or no items updated.[/yellow]")
 
 
-@cli.command()
+@tags.command(name="delete")
+@click.argument("name")
+@click.confirmation_option(prompt="Are you sure you want to delete this tag from all items?")
+def tags_delete(name):
+    """Delete a tag."""
+    storage = get_storage()
+    count = storage.delete_tag(name)
+    if count > 0:
+        console.print(f"[bold green]✓ Deleted tag '{name}' from {count} items[/bold green]")
+    else:
+        console.print(f"[yellow]Tag '{name}' not found.[/yellow]")
+
+
+@cli.group(invoke_without_command=True)
 @click.option("--sort", type=click.Choice(["name", "count"]), default="count", help="Sort by name or count")
-def projects(sort):
-    """List all projects."""
+@click.pass_context
+def projects(ctx, sort):
+    """Manage projects (list, rename, delete)."""
+    if ctx.invoked_subcommand is None:
+        # Default behavior: list projects
+        storage = get_storage()
+        if not storage.index.projects:
+            console.print("[dim]No projects found.[/dim]")
+            return
+
+        # Prepare data
+        project_data = []
+        for project, ids in storage.index.projects.items():
+            notes_count = 0
+            tasks_count = 0
+            for item_id in ids:
+                if item_id in storage.index.notes:
+                    notes_count += 1
+                elif item_id in storage.index.tasks:
+                    tasks_count += 1
+            
+            project_data.append((project, notes_count, tasks_count, len(ids)))
+
+        # Sort
+        if sort == "name":
+            project_data.sort(key=lambda x: x[0])
+        else:
+            project_data.sort(key=lambda x: x[3], reverse=True)
+
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Project", style="bold")
+        table.add_column("Notes", justify="right")
+        table.add_column("Tasks", justify="right")
+        table.add_column("Total", justify="right")
+
+        for project, n_count, t_count, total in project_data:
+            table.add_row(project, str(n_count), str(t_count), str(total))
+
+        console.print()
+        console.print(table)
+        console.print(f"\n[dim]Total: {len(project_data)} projects[/dim]\n")
+
+
+@projects.command(name="rename")
+@click.argument("old_name")
+@click.argument("new_name")
+def projects_rename(old_name, new_name):
+    """Rename a project."""
     storage = get_storage()
-    if not storage.index.projects:
-        console.print("[dim]No projects found.[/dim]")
-        return
-
-    # Prepare data
-    project_data = []
-    for project, ids in storage.index.projects.items():
-        notes_count = 0
-        tasks_count = 0
-        for item_id in ids:
-            if item_id in storage.index.notes:
-                notes_count += 1
-            elif item_id in storage.index.tasks:
-                tasks_count += 1
-        
-        project_data.append((project, notes_count, tasks_count, len(ids)))
-
-    # Sort
-    if sort == "name":
-        project_data.sort(key=lambda x: x[0])
+    count = storage.rename_project(old_name, new_name)
+    if count > 0:
+        console.print(f"[bold green]✓ Renamed project '{old_name}' to '{new_name}' in {count} items[/bold green]")
     else:
-        project_data.sort(key=lambda x: x[3], reverse=True)
+        console.print(f"[yellow]Project '{old_name}' not found or no items updated.[/yellow]")
 
-    table = Table(show_header=True, header_style="bold cyan")
-    table.add_column("Project", style="bold")
-    table.add_column("Notes", justify="right")
-    table.add_column("Tasks", justify="right")
-    table.add_column("Total", justify="right")
 
-    for project, n_count, t_count, total in project_data:
-        table.add_row(project, str(n_count), str(t_count), str(total))
-
-    console.print()
-    console.print(table)
-    console.print(f"\n[dim]Total: {len(project_data)} projects[/dim]\n")
+@projects.command(name="delete")
+@click.argument("name")
+@click.confirmation_option(prompt="Are you sure you want to delete this project from all items?")
+def projects_delete(name):
+    """Delete a project."""
+    storage = get_storage()
+    count = storage.delete_project(name)
+    if count > 0:
+        console.print(f"[bold green]✓ Deleted project '{name}' from {count} items[/bold green]")
+    else:
+        console.print(f"[yellow]Project '{name}' not found.[/yellow]")
 
 
 def main():

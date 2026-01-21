@@ -170,12 +170,43 @@ class MetadataIndex(BaseModel):
 
     def add_note(self, note: Note) -> None:
         """Add note to index."""
+        # Cleanup old index entries if note exists
+        if note.id in self.notes:
+            old_data = self.notes[note.id]
+            
+            # Check project change
+            old_project = old_data.get("project")
+            if old_project and old_project != note.project:
+                if old_project in self.projects and note.id in self.projects[old_project]:
+                    self.projects[old_project].remove(note.id)
+                    if not self.projects[old_project]:  # Clean up empty
+                        del self.projects[old_project]
+
+            # Check tags change
+            old_tags = old_data.get("tags", [])
+            for tag in old_tags:
+                if tag not in note.tags:
+                    if tag in self.tags and note.id in self.tags[tag]:
+                        self.tags[tag].remove(note.id)
+                        if not self.tags[tag]:  # Clean up empty
+                            del self.tags[tag]
+                            
+            # Check category change
+            old_category = old_data.get("category")
+            if old_category and old_category != note.category:
+                 if old_category in self.categories and note.id in self.categories[old_category]:
+                    self.categories[old_category].remove(note.id)
+                    if not self.categories[old_category]:
+                        del self.categories[old_category]
+
+        # Update metadata storage
         self.notes[note.id] = {
             "title": note.title,
             "tags": note.tags,
             "category": note.category,
             "project": note.project,
             "file_path": str(note.file_path) if note.file_path else None,
+            "extra": note.extra,
             "created_at": note.created_at.isoformat(),
         }
 
@@ -203,6 +234,36 @@ class MetadataIndex(BaseModel):
 
     def add_task(self, task: Task) -> None:
         """Add task to index."""
+        # Cleanup old index entries if task exists
+        if task.id in self.tasks:
+            old_data = self.tasks[task.id]
+            
+            # Check project change
+            old_project = old_data.get("project")
+            if old_project and old_project != task.project:
+                if old_project in self.projects and task.id in self.projects[old_project]:
+                    self.projects[old_project].remove(task.id)
+                    if not self.projects[old_project]:
+                        del self.projects[old_project]
+                        
+            # Check assignee change
+            old_assignee = old_data.get("assignee")
+            if old_assignee and old_assignee != task.assignee:
+                 if old_assignee in self.assignees and task.id in self.assignees[old_assignee]:
+                    self.assignees[old_assignee].remove(task.id)
+                    if not self.assignees[old_assignee]:
+                        del self.assignees[old_assignee]
+
+            # Check tags change
+            old_tags = old_data.get("tags", [])
+            for tag in old_tags:
+                if tag not in task.tags:
+                    if tag in self.tags and task.id in self.tags[tag]:
+                        self.tags[tag].remove(task.id)
+                        if not self.tags[tag]:
+                            del self.tags[tag]
+
+        # Update metadata storage
         self.tasks[task.id] = {
             "title": task.title,
             "status": task.status.value,

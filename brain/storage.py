@@ -279,6 +279,148 @@ class Storage:
 
         return True
 
+    def rename_project(self, old_name: str, new_name: str) -> int:
+        """Rename a project across all tasks and notes.
+
+        Args:
+            old_name: Current project name
+            new_name: New project name
+
+        Returns:
+            Number of items updated
+        """
+        old_name = self.get_canonical_project(old_name)
+        new_name = self.get_canonical_project(new_name)
+        
+        if old_name not in self.index.projects:
+            return 0
+            
+        count = 0
+        ids = list(self.index.projects[old_name]) # Copy list as it will change
+        
+        for item_id in ids:
+            # Check if it's a task
+            if item_id in self.index.tasks:
+                task = self.load_task(item_id)
+                if task:
+                    task.project = new_name
+                    self.save_task(task)
+                    count += 1
+            # Check if it's a note
+            elif item_id in self.index.notes:
+                note = self.load_note(item_id)
+                if note:
+                    note.project = new_name
+                    self.save_note(note)
+                    count += 1
+                    
+        return count
+
+    def delete_project(self, name: str) -> int:
+        """Delete a project (remove from all tasks and notes).
+
+        Args:
+            name: Project name to delete
+
+        Returns:
+            Number of items updated
+        """
+        name = self.get_canonical_project(name)
+        
+        if name not in self.index.projects:
+            return 0
+            
+        count = 0
+        ids = list(self.index.projects[name])
+        
+        for item_id in ids:
+            if item_id in self.index.tasks:
+                task = self.load_task(item_id)
+                if task:
+                    task.project = None
+                    self.save_task(task)
+                    count += 1
+            elif item_id in self.index.notes:
+                note = self.load_note(item_id)
+                if note:
+                    note.project = None
+                    self.save_note(note)
+                    count += 1
+                    
+        return count
+
+    def rename_tag(self, old_name: str, new_name: str) -> int:
+        """Rename a tag across all tasks and notes.
+
+        Args:
+            old_name: Current tag name
+            new_name: New tag name
+
+        Returns:
+            Number of items updated
+        """
+        old_name = self.get_canonical_tag(old_name)
+        new_name = self.get_canonical_tag(new_name)
+        
+        if old_name not in self.index.tags:
+            return 0
+            
+        count = 0
+        ids = list(self.index.tags[old_name])
+        
+        for item_id in ids:
+            if item_id in self.index.tasks:
+                task = self.load_task(item_id)
+                if task and old_name in task.tags:
+                    task.tags.remove(old_name)
+                    if new_name not in task.tags:
+                        task.tags.append(new_name)
+                    self.save_task(task)
+                    count += 1
+            elif item_id in self.index.notes:
+                note = self.load_note(item_id)
+                if note and old_name in note.tags:
+                    note.tags.remove(old_name)
+                    if new_name not in note.tags:
+                        note.tags.append(new_name)
+                    self.save_note(note)
+                    count += 1
+                    
+        return count
+
+    def delete_tag(self, name: str) -> int:
+        """Delete a tag (remove from all tasks and notes).
+
+        Args:
+            name: Tag name to delete
+
+        Returns:
+            Number of items updated
+        """
+        name = self.get_canonical_tag(name)
+        
+        if name not in self.index.tags:
+            return 0
+            
+        count = 0
+        ids = list(self.index.tags[name])
+        
+        for item_id in ids:
+            if item_id in self.index.tasks:
+                task = self.load_task(item_id)
+                if task and name in task.tags:
+                    task.tags.remove(name)
+                    self.save_task(task)
+                    count += 1
+            elif item_id in self.index.notes:
+                note = self.load_note(item_id)
+                if note and name in note.tags:
+                    note.tags.remove(name)
+                    self.save_note(note)
+                    count += 1
+                    
+        return count
+
     def list_notes(
         self,
         tags: Optional[list[str]] = None,
