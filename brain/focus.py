@@ -71,12 +71,21 @@ def _display_task_table(console: Console, tasks: list[Task]) -> None:
         console: Rich console
         tasks: List of tasks to display
     """
+    # Sort tasks: Priority (Urgent->Low), Due Date (Ascending), Title (A-Z)
+    priority_map = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+    tasks.sort(key=lambda t: (
+        priority_map.get(t.priority.value, 4),
+        t.due_date.timestamp() if t.due_date else datetime.max.timestamp(),
+        t.title
+    ))
+
     table = Table(show_header=True, header_style="bold")
     table.add_column("ID", style="dim", width=8)
     table.add_column("Priority", width=8)
     table.add_column("Title", style="bold")
+    table.add_column("Project", overflow="fold")
     table.add_column("Due", width=12)
-    table.add_column("Tags", width=20)
+    table.add_column("Tags", overflow="fold")
 
     for task in tasks:
         # Priority with color
@@ -107,12 +116,14 @@ def _display_task_table(console: Console, tasks: list[Task]) -> None:
             due_text = "[dim]-[/dim]"
 
         # Tags
-        tags_text = ", ".join(task.tags[:3]) if task.tags else "[dim]-[/dim]"
+        tags_text = ", ".join(task.tags) if task.tags else "[dim]-[/dim]"
+        project_text = task.project if task.project else "[dim]-[/dim]"
 
         table.add_row(
             task.id,
             priority_text,
             task.title,
+            project_text,
             due_text,
             tags_text,
         )
