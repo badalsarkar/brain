@@ -14,6 +14,7 @@ from brain.config import get_config, reload_config
 from brain.storage import get_storage
 from brain.git_utils import get_git_manager
 from brain import notes, tasks
+from brain.models import TaskStatus, TaskPriority
 from brain.focus import show_focus_view, show_stats
 
 
