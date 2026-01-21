@@ -412,9 +412,34 @@ def list_tasks_cmd(status, tags, project, assignee):
 # ... today/week/done commands ... 
 
 @tasks_group.command(name="show")
-@click.argument("task_id")
+@click.argument("task_id", required=False)
 def show_task(task_id):
     """Show task details."""
+    if not task_id:
+        # Interactive selection
+        import questionary
+        
+        recent_tasks = tasks.list_tasks(limit=20, status=None) # List all statuses
+        if not recent_tasks:
+            console.print("[dim]No tasks found.[/dim]")
+            return
+
+        choices = []
+        for task in recent_tasks:
+            status_color = "green" if task.status == TaskStatus.DONE else "yellow"
+            choices.append(questionary.Choice(
+                title=f"[{task.status.value}] {task.title}",
+                value=task.id
+            ))
+
+        task_id = questionary.select(
+            "Select a task:",
+            choices=choices
+        ).ask()
+        
+        if not task_id:
+            return
+
     task = tasks.get_task(task_id)
 
     if not task:
