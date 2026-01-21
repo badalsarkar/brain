@@ -46,6 +46,12 @@ def create_task(
     if tags is None:
         tags = config.default_tags.copy()
 
+    # Canonicalize project and tags
+    if project:
+        project = storage.get_canonical_project(project)
+    if tags:
+        tags = [storage.get_canonical_tag(t) for t in tags]
+
     # Create task
     task = Task(
         title=title,
@@ -174,9 +180,9 @@ def update_task(
     if due_date is not None:
         task.due_date = parse_due_date(due_date)
     if tags is not None:
-        task.tags = tags
+        task.tags = [storage.get_canonical_tag(t) for t in tags]
     if project is not None:
-        task.project = project
+        task.project = storage.get_canonical_project(project)
     if assignee is not None:
         task.assignee = assignee
 

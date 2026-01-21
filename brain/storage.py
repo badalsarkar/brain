@@ -205,6 +205,34 @@ class Storage:
 
         return Task.from_frontmatter(post.metadata, post.content, file_path)
 
+    def get_canonical_project(self, project_name: str) -> str:
+        """Get normalized (lowercase) project name.
+
+        Args:
+            project_name: Project name to check
+
+        Returns:
+            Lowercase project name
+        """
+        if not project_name:
+            return project_name
+            
+        return project_name.lower().strip()
+
+    def get_canonical_tag(self, tag_name: str) -> str:
+        """Get normalized (lowercase) tag name.
+
+        Args:
+            tag_name: Tag name to check
+
+        Returns:
+            Lowercase tag name
+        """
+        if not tag_name:
+            return tag_name
+            
+        return tag_name.lower().strip()
+
     def delete_note(self, note_id: str) -> bool:
         """Delete note.
 

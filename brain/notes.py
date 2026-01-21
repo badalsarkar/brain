@@ -50,6 +50,12 @@ def create_note(
             # Merge with existing tags, avoiding duplicates
             tags = list(set(tags + ai_tags))
 
+    # Canonicalize project and tags
+    if project:
+        project = storage.get_canonical_project(project)
+    if tags:
+        tags = [storage.get_canonical_tag(t) for t in tags]
+
     # Create note
     note = Note(
         title=title,
@@ -143,11 +149,11 @@ def update_note(
     if content is not None:
         note.content = content
     if tags is not None:
-        note.tags = tags
+        note.tags = [storage.get_canonical_tag(t) for t in tags]
     if category is not None:
         note.category = category
     if project is not None:
-        note.project = project
+        note.project = storage.get_canonical_project(project)
 
     # Save changes
     storage.save_note(note)
