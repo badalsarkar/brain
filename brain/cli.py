@@ -543,6 +543,53 @@ def edit_task(task_id, title, status, priority, due, tags, project, assign, desc
         # ... other prints ...
 
 
+
+@tasks_group.command(name="complete")
+@click.argument("task_id", required=False)
+def complete_task_cmd(task_id):
+    """Mark a task as complete."""
+    if not task_id:
+        # Interactive selection (only show pending tasks)
+        import questionary
+        
+        # Get pending tasks
+        all_tasks = tasks.list_tasks(limit=50, status=None)
+        pending_tasks = [t for t in all_tasks if t.status != TaskStatus.DONE]
+        
+        if not pending_tasks:
+            console.print("[dim]No pending tasks found.[/dim]")
+            return
+
+        choices = []
+        for task in pending_tasks:
+            priority_icon = "🔴" if task.priority == TaskPriority.URGENT else "⚪"
+            # simple text distinction
+            p_label = f"[{task.priority.value.upper()}]"
+            
+            choices.append(questionary.Choice(
+                title=f"{p_label} {task.title}",
+                value=task.id
+            ))
+
+        task_id = questionary.select(
+            "Select a task to complete:",
+            choices=choices
+        ).ask()
+        
+        if not task_id:
+            return
+
+    # Perform completion
+    updated_task = tasks.complete_task(task_id)
+
+    if not updated_task:
+        console.print(f"[red]Task {task_id} not found.[/red]")
+        sys.exit(1)
+
+    console.print(f"[bold green]✓ Task marked as complete![/bold green]")
+    console.print(f"[dim]{updated_task.title}[/dim]")
+
+
 @cli.command()
 @click.argument("person")
 @click.argument("message")
