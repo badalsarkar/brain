@@ -988,12 +988,16 @@ def projects(ctx, sort):
 
         table = Table(show_header=True, header_style="bold cyan")
         table.add_column("Project", style="bold")
+        table.add_column("Meta", justify="center")
         table.add_column("Notes", justify="right")
         table.add_column("Tasks", justify="right")
         table.add_column("Total", justify="right")
 
+        rich_projects = storage.list_projects_metadata()
+
         for project, n_count, t_count, total in project_data:
-            table.add_row(project, str(n_count), str(t_count), str(total))
+            has_meta = "✓" if project in rich_projects else ""
+            table.add_row(project, has_meta, str(n_count), str(t_count), str(total))
 
         console.print()
         console.print(table)
@@ -1024,6 +1028,57 @@ def projects_delete(name):
         console.print(f"[bold green]✓ Deleted project '{name}' from {count} items[/bold green]")
     else:
         console.print(f"[yellow]Project '{name}' not found.[/yellow]")
+
+
+@projects.command(name="show")
+@click.argument("name")
+def projects_show(name):
+    """Show project details."""
+    storage = get_storage()
+    project_meta = storage.get_project(name)
+    
+    # Check if project exists in index (even if no rich metadata)
+    canonical_name = storage.get_canonical_project(name)
+    if canonical_name not in storage.index.projects:
+        console.print(f"[red]Project '{name}' not found.[/red]")
+        return
+
+    console.print(f"\n[bold cyan]Project: {canonical_name}[/bold cyan]")
+    
+    if project_meta and project_meta.description:
+        console.print("\n[bold]Description:[/bold]")
+        console.print(Markdown(project_meta.description))
+    else:
+        console.print("\n[dim]No description provided.[/dim]")
+
+    # Show stats
+    ids = storage.index.projects[canonical_name]
+    notes_count = sum(1 for i in ids if i in storage.index.notes)
+    tasks_count = sum(1 for i in ids if i in storage.index.tasks)
+    
+    console.print(f"\n[dim]Stats: {notes_count} notes, {tasks_count} tasks[/dim]\n")
+
+
+@projects.command(name="edit")
+@click.argument("name")
+def projects_edit(name):
+    """Edit project description."""
+    storage = get_storage()
+    canonical_name = storage.get_canonical_project(name)
+    
+    # It's okay to edit a project that doesn't exist in index yet (to pre-create metadata)
+    project = storage.get_project(canonical_name)
+    if not project:
+        from brain.models import Project
+        project = Project(name=canonical_name, description="")
+
+    new_description = click.edit(project.description)
+    if new_description is not None:
+        project.description = new_description.strip()
+        storage.save_project(project)
+        console.print(f"[bold green]✓ Project metadata updated for '{canonical_name}'[/bold green]")
+    else:
+        console.print("[dim]No changes made.[/dim]")
 
 
 def main():

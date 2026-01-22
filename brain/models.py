@@ -27,6 +27,39 @@ class TaskPriority(str, Enum):
     URGENT = "urgent"
 
 
+class Project(BaseModel):
+    """Rich project model."""
+
+    name: str # canonical name
+    description: str = ""
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+    file_path: Optional[Path] = None
+
+    def to_frontmatter_dict(self) -> dict:
+        """Convert to dictionary for YAML frontmatter."""
+        return {
+            "name": self.name,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+    @classmethod
+    def from_frontmatter(cls, metadata: dict, content: str, file_path: Path) -> "Project":
+        """Create Project from frontmatter metadata and content."""
+        return cls(
+            name=metadata.get("name", file_path.stem),
+            description=content,
+            created_at=datetime.fromisoformat(metadata["created_at"])
+            if "created_at" in metadata
+            else datetime.now(),
+            updated_at=datetime.fromisoformat(metadata["updated_at"])
+            if "updated_at" in metadata
+            else datetime.now(),
+            file_path=file_path,
+        )
+
+
 class Note(BaseModel):
     """Note model."""
 

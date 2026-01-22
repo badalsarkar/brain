@@ -8,7 +8,7 @@ from typing import Optional
 import frontmatter
 
 from brain.config import get_config
-from brain.models import Note, Task, MetadataIndex
+from brain.models import Note, Task, MetadataIndex, Project
 from brain.git_utils import get_git_manager
 
 
@@ -205,6 +205,68 @@ class Storage:
 
         return Task.from_frontmatter(post.metadata, post.content, file_path)
 
+    def save_project(self, project: Project) -> Path:
+        """Save project metadata to file system.
+
+        Args:
+            project: Project to save
+
+        Returns:
+            Path where project was saved
+        """
+        project.updated_at = datetime.now()
+        
+        if project.file_path is None:
+            filename = f"{project.name}.md"
+            project.file_path = self.config.projects_dir / filename
+
+        post = frontmatter.Post(project.description)
+        post.metadata = project.to_frontmatter_dict()
+
+        project.file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(project.file_path, "w") as f:
+            f.write(frontmatter.dumps(post))
+
+        self.git.auto_commit(f"Add/update project metadata: {project.name}", [project.file_path])
+        return project.file_path
+
+    def get_project(self, name: str) -> Optional[Project]:
+        """Get project by name.
+
+        Args:
+            name: Project name
+
+        Returns:
+            Project object or None if no rich metadata exists
+        """
+        name = self.get_canonical_project(name)
+        file_path = self.config.projects_dir / f"{name}.md"
+        
+        if not file_path.exists():
+            return None
+
+        with open(file_path) as f:
+            post = frontmatter.load(f)
+            
+        return Project.from_frontmatter(post.metadata, post.content, file_path)
+
+    def list_projects_metadata(self) -> dict[str, Project]:
+        """List all projects that have rich metadata.
+
+        Returns:
+            Dictionary mapping name to Project object
+        """
+        projects = {}
+        for file_path in self.config.projects_dir.glob("*.md"):
+            try:
+                with open(file_path) as f:
+                    post = frontmatter.load(f)
+                    project = Project.from_frontmatter(post.metadata, post.content, file_path)
+                    projects[project.name] = project
+            except Exception:
+                continue
+        return projects
+
     def get_canonical_project(self, project_name: str) -> str:
         """Get normalized (lowercase) project name.
 
@@ -313,6 +375,20 @@ class Storage:
                     note.project = new_name
                     self.save_note(note)
                     count += 1
+        
+        # Also rename metadata file if it exists
+        old_meta_path = self.config.projects_dir / f"{old_name}.md"
+        new_meta_path = self.config.projects_dir / f"{new_name}.md"
+        if old_meta_path.exists():
+            if new_meta_path.exists():
+                new_meta_path.unlink()
+            
+            project = self.get_project(old_name)
+            if project:
+                project.name = new_name
+                project.file_path = new_meta_path
+                self.save_project(project)
+                old_meta_path.unlink()
                     
         return count
 
@@ -346,7 +422,13 @@ class Storage:
                     note.project = None
                     self.save_note(note)
                     count += 1
-                    
+        
+        # Also delete metadata file if it exists
+        meta_path = self.config.projects_dir / f"{name}.md"
+        if meta_path.exists():
+            meta_path.unlink()
+            self.git.auto_commit(f"Delete project metadata: {name}")
+                
         return count
 
     def rename_tag(self, old_name: str, new_name: str) -> int:
