@@ -13,8 +13,9 @@ from brain import __version__
 from brain.config import get_config, reload_config
 from brain.storage import get_storage
 from brain.git_utils import get_git_manager
-from brain import notes, tasks
+from brain import notes, tasks, projects as projects_mod
 from brain.models import TaskStatus, TaskPriority
+from brain.utils import parse_date
 from brain.focus import show_focus_view, show_stats
 
 
@@ -963,13 +964,17 @@ def projects(ctx, sort):
     if ctx.invoked_subcommand is None:
         # Default behavior: list projects
         storage = get_storage()
-        if not storage.index.projects:
+        # Prepare data
+        rich_projects = storage.list_projects_metadata()
+        all_project_names = set(storage.index.projects.keys()) | set(rich_projects.keys())
+        
+        if not all_project_names:
             console.print("[dim]No projects found.[/dim]")
             return
 
-        # Prepare data
         project_data = []
-        for project, ids in storage.index.projects.items():
+        for project in all_project_names:
+            ids = storage.index.projects.get(project, [])
             notes_count = 0
             tasks_count = 0
             for item_id in ids:
@@ -1030,16 +1035,56 @@ def projects_delete(name):
         console.print(f"[yellow]Project '{name}' not found.[/yellow]")
 
 
+@projects.command(name="create")
+@click.option("--name", "-n", help="Project name")
+@click.option("--description", "-d", help="Project description")
+@click.option("--end-date", "-e", help="Project end date (e.g., 'next month')")
+@click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
+def projects_create(name, description, end_date, interactive):
+    """Create a new project."""
+    if interactive:
+        import questionary
+        
+        if not name:
+            name = questionary.text("Project Name:").ask()
+            if not name:
+                console.print("[red]Project name is required.[/red]")
+                return
+
+        if not description:
+            description = questionary.text("Description:").ask()
+
+        if not end_date:
+            end_date = questionary.text("End Date (optional, e.g., 'next friday'):").ask()
+
+    if not name:
+        console.print("[red]Project name is required. Use --name or --interactive.[/red]")
+        sys.exit(1)
+
+    project = projects_mod.create_project(
+        name=name,
+        description=description or "",
+        end_date=end_date
+    )
+
+    console.print(f"\n[bold green]✓ Project '{project.name}' created/updated![/bold green]")
+    if project.end_date:
+        console.print(f"End Date: {project.end_date.strftime('%Y-%m-%d')}")
+    console.print()
+
+
 @projects.command(name="show")
 @click.argument("name")
 def projects_show(name):
     """Show project details."""
     storage = get_storage()
-    project_meta = storage.get_project(name)
+    project_meta = projects_mod.get_project(name)
     
     # Check if project exists in index (even if no rich metadata)
     canonical_name = storage.get_canonical_project(name)
-    if canonical_name not in storage.index.projects:
+    has_index = canonical_name in storage.index.projects
+    
+    if not project_meta and not has_index:
         console.print(f"[red]Project '{name}' not found.[/red]")
         return
 
@@ -1051,8 +1096,11 @@ def projects_show(name):
     else:
         console.print("\n[dim]No description provided.[/dim]")
 
+    if project_meta and project_meta.end_date:
+        console.print(f"\n[bold]End Date:[/bold] {project_meta.end_date.strftime('%Y-%m-%d')}")
+
     # Show stats
-    ids = storage.index.projects[canonical_name]
+    ids = storage.index.projects.get(canonical_name, [])
     notes_count = sum(1 for i in ids if i in storage.index.notes)
     tasks_count = sum(1 for i in ids if i in storage.index.tasks)
     

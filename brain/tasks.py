@@ -3,12 +3,11 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
-from dateutil import parser as date_parser
-
 from brain.ai.factory import get_ai_provider
 from brain.config import get_config
 from brain.models import Task, TaskStatus, TaskPriority
 from brain.storage import get_storage
+from brain.utils import parse_date
 
 
 def create_task(
@@ -40,7 +39,7 @@ def create_task(
     # Parse due date
     parsed_due_date = None
     if due_date:
-        parsed_due_date = parse_due_date(due_date)
+        parsed_due_date = parse_date(due_date)
 
     # Use defaults if not provided
     if tags is None:
@@ -68,58 +67,6 @@ def create_task(
 
     return task
 
-import re
-from dateutil.relativedelta import relativedelta
-
-def parse_due_date(date_str: str) -> Optional[datetime]:
-    """Parse due date from various formats.
-
-    Args:
-        date_str: Date string (e.g., "tomorrow", "in 2 days", "next week")
-
-    Returns:
-        Parsed datetime or None
-    """
-    date_str = date_str.lower().strip()
-    now = datetime.now()
-    
-    # Common mappings
-    if date_str == "today":
-        return now.replace(hour=23, minute=59, second=59)
-    elif date_str == "tomorrow":
-        return (now + timedelta(days=1)).replace(hour=23, minute=59, second=59)
-    elif date_str == "next week":
-        return (now + timedelta(weeks=1)).replace(hour=23, minute=59, second=59)
-    elif date_str == "next month":
-        return (now + relativedelta(months=1)).replace(hour=23, minute=59, second=59)
-
-    # Regex patterns for relative dates
-    # "in 3 days", "after 5 days", "2 weeks", "after 1 month"
-    patterns = [
-        (r"(?:in|after)?\s*(\d+)\s*days?", "days"),
-        (r"(?:in|after)?\s*(\d+)\s*weeks?", "weeks"),
-        (r"(?:in|after)?\s*(\d+)\s*months?", "months"),
-    ]
-
-    for pattern, unit in patterns:
-        match = re.search(pattern, date_str)
-        if match:
-            amount = int(match.group(1))
-            if unit == "days":
-                return (now + timedelta(days=amount)).replace(hour=23, minute=59, second=59)
-            elif unit == "weeks":
-                return (now + timedelta(weeks=amount)).replace(hour=23, minute=59, second=59)
-            elif unit == "months":
-                return (now + relativedelta(months=amount)).replace(hour=23, minute=59, second=59)
-
-    # Fallback to fuzzy parsing
-    try:
-        dt = date_parser.parse(date_str, fuzzy=True)
-        # If the parsed date is in the past (and no year specified), usually assume future
-        return dt.replace(hour=23, minute=59, second=59)
-    except:
-        return None
-
 
 def get_task(task_id: str) -> Optional[Task]:
     """Get task by ID.
@@ -132,6 +79,7 @@ def get_task(task_id: str) -> Optional[Task]:
     """
     storage = get_storage()
     return storage.load_task(task_id)
+
 
 def update_task(
     task_id: str,
@@ -178,7 +126,7 @@ def update_task(
     if priority is not None:
         task.priority = TaskPriority(priority)
     if due_date is not None:
-        task.due_date = parse_due_date(due_date)
+        task.due_date = parse_date(due_date)
     if tags is not None:
         task.tags = [storage.get_canonical_tag(t) for t in tags]
     if project is not None:
@@ -273,7 +221,8 @@ def get_tasks_by_timeframe(timeframe: str = "today") -> list[Task]:
             if task.due_date and task.due_date <= now + timedelta(days=7):
                 filtered_tasks.append(task)
         elif timeframe == "month":
-            if task.due_date and task.due_date <= now + timedelta(days=30):
+            from dateutil.relativedelta import relativedelta
+            if task.due_date and task.due_date <= now + relativedelta(months=1):
                 filtered_tasks.append(task)
 
     return filtered_tasks

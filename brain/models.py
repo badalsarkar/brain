@@ -32,6 +32,7 @@ class Project(BaseModel):
 
     name: str # canonical name
     description: str = ""
+    end_date: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     file_path: Optional[Path] = None
@@ -40,6 +41,7 @@ class Project(BaseModel):
         """Convert to dictionary for YAML frontmatter."""
         return {
             "name": self.name,
+            "end_date": self.end_date.isoformat() if self.end_date else None,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
@@ -50,6 +52,9 @@ class Project(BaseModel):
         return cls(
             name=metadata.get("name", file_path.stem),
             description=content,
+            end_date=datetime.fromisoformat(metadata["end_date"])
+            if metadata.get("end_date")
+            else None,
             created_at=datetime.fromisoformat(metadata["created_at"])
             if "created_at" in metadata
             else datetime.now(),
