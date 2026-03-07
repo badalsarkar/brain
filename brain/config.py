@@ -62,6 +62,11 @@ class BrainConfig(BaseSettings):
         return self.brain_data_dir / "projects"
 
     @property
+    def templates_dir(self) -> Path:
+        """Directory for note templates."""
+        return self.brain_data_dir / "templates"
+
+    @property
     def metadata_dir(self) -> Path:
         """Directory for metadata."""
         return self.brain_data_dir / ".brain"
@@ -82,6 +87,7 @@ class BrainConfig(BaseSettings):
         self.notes_dir.mkdir(parents=True, exist_ok=True)
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         self.projects_dir.mkdir(parents=True, exist_ok=True)
+        self.templates_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_dir.mkdir(parents=True, exist_ok=True)
 
     def save_config(self) -> None:

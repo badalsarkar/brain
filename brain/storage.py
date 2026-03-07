@@ -553,6 +553,76 @@ class Storage:
                     
         return count
 
+    def load_template(self, name: str) -> Optional[tuple[dict, str]]:
+        """Load a note template by name.
+
+        Args:
+            name: Template name (without .md extension)
+
+        Returns:
+            Tuple of (metadata dict, content string) or None if not found
+        """
+        template_path = self.config.templates_dir / f"{name}.md"
+        if not template_path.exists():
+            return None
+
+        with open(template_path) as f:
+            post = frontmatter.load(f)
+
+        return dict(post.metadata), post.content
+
+    def list_templates(self) -> list[str]:
+        """List available template names.
+
+        Returns:
+            List of template names (without .md extension)
+        """
+        return sorted(p.stem for p in self.config.templates_dir.glob("*.md"))
+
+    def ensure_default_templates(self) -> None:
+        """Write default templates if templates dir is empty."""
+        if list(self.config.templates_dir.glob("*.md")):
+            return
+
+        meeting_template = self.config.templates_dir / "meeting.md"
+        meeting_content = """---
+type: meeting
+tags: [meeting]
+---
+## Attendees
+-
+
+## Agenda
+1.
+
+## Discussion
+
+## Action Items
+- [ ]
+"""
+        meeting_template.write_text(meeting_content)
+
+    @property
+    def scratch_file(self) -> Path:
+        """Path to the scratch pad file."""
+        return self.config.notes_dir / "scratch.md"
+
+    def append_scratch(self, content: str) -> None:
+        """Append an entry to the scratch pad file.
+
+        Args:
+            content: Text to append
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        entry = f"\n---\n**{timestamp}** — {content}\n"
+
+        self.config.notes_dir.mkdir(parents=True, exist_ok=True)
+
+        with open(self.scratch_file, "a") as f:
+            f.write(entry)
+
+        self.git.auto_commit("Update scratch pad", [self.scratch_file])
+
     def list_notes(
         self,
         tags: Optional[list[str]] = None,

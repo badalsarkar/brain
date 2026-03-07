@@ -73,6 +73,7 @@ class Note(BaseModel):
     content: str
     tags: list[str] = Field(default_factory=list)
     category: str = "general"
+    note_type: Optional[str] = None
     project: Optional[str] = None
     extra: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.now)
@@ -84,6 +85,7 @@ class Note(BaseModel):
         base_dict = {
             "id": self.id,
             "title": self.title,
+            "type": self.note_type,
             "tags": self.tags,
             "category": self.category,
             "project": self.project,
@@ -99,7 +101,7 @@ class Note(BaseModel):
         """Create Note from frontmatter metadata and content."""
         # separate known fields from extra
         known_fields = {
-            "id", "title", "tags", "category", "project", "created_at", "updated_at"
+            "id", "title", "type", "tags", "category", "project", "created_at", "updated_at"
         }
         extra = {k: v for k, v in metadata.items() if k not in known_fields}
         
@@ -107,6 +109,7 @@ class Note(BaseModel):
             id=metadata.get("id", uuid4().hex[:8]),
             title=metadata.get("title", "Untitled"),
             content=content,
+            note_type=metadata.get("type"),
             tags=metadata.get("tags", []),
             category=metadata.get("category", "general"),
             project=metadata.get("project"),
@@ -240,6 +243,7 @@ class MetadataIndex(BaseModel):
         # Update metadata storage
         self.notes[note.id] = {
             "title": note.title,
+            "note_type": note.note_type,
             "tags": note.tags,
             "category": note.category,
             "project": note.project,

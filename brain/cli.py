@@ -1,5 +1,7 @@
 """Command-line interface for brain."""
 
+import os
+import shutil
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -52,6 +54,11 @@ def init():
     else:
         console.print("[yellow]! Git not initialized (auto-commit disabled)[/yellow]")
 
+    # Ensure default templates
+    storage = get_storage()
+    storage.ensure_default_templates()
+    console.print("✓ Created default templates")
+
     # Save config
     config.save_config()
     console.print(f"✓ Saved configuration to: {config.config_file}")
@@ -67,85 +74,245 @@ def init():
 # ============================================================================
 
 
-@cli.command()
-@click.argument("content", required=False)
-@click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
-@click.option("--from-stdin", is_flag=True, help="Read from stdin")
-@click.option("--tags", "-t", multiple=True, help="Tags for the note")
-@click.option("--category", "-c", help="Category")
-@click.option("--project", "-p", help="Project name")
-@click.option("--no-ai", is_flag=True, help="Disable AI auto-tagging")
-def note(content, interactive, from_stdin, tags, category, project, no_ai):
-    """Quick capture a note."""
+def _create_note(title, content, tags, category, project, no_ai, note_type=None):
+    """Shared note creation logic with compact output."""
     auto_tag = not no_ai
+    lines = title.split("\n", 1)
+    title = lines[0].strip()
+    body = lines[1].strip() if len(lines) > 1 else (content or "")
 
-    if interactive:
-        # Interactive mode
-        title = click.prompt("Title")
-        content_text = click.edit() or ""
-        tags_input = click.prompt("Tags (comma-separated)", default="")
-        category_input = click.prompt("Category", default="general")
-        project_input = click.prompt("Project (optional)", default="")
+    created_note = notes.create_note(
+        title=title,
+        content=body,
+        tags=list(tags) if tags else None,
+        category=category,
+        project=project or None,
+        note_type=note_type,
+        auto_tag=auto_tag,
+    )
 
-        tags_list = [t.strip() for t in tags_input.split(",") if t.strip()]
-        
-        created_note = notes.create_note(
-            title=title,
-            content=content_text,
-            tags=tags_list,
-            category=category_input,
-            project=project_input or None,
-            auto_tag=auto_tag,
-        )
-    elif from_stdin:
-        # Read from stdin
-        created_note = notes.capture_from_stdin(auto_tag=auto_tag)
-    elif content:
-        # Quick capture
-        lines = content.split("\n", 1)
-        title = lines[0].strip()
-        body = lines[1].strip() if len(lines) > 1 else ""
-        
-        created_note = notes.create_note(
-            title=title, 
-            content=body, 
-            tags=list(tags) if tags else None,
-            category=category,
-            project=project,
-            auto_tag=auto_tag
-        )
-    else:
-        console.print("[red]Error: Provide content, use --interactive, or --from-stdin[/red]")
-        sys.exit(1)
-
-    console.print(f"\n[bold green]✓ Note created![/bold green]")
-    console.print(f"ID: {created_note.id}")
-    console.print(f"Title: {created_note.title}")
+    parts = [f"[bold green]Note {created_note.id} created[/bold green]"]
+    if created_note.note_type:
+        parts.append(f"[dim]{created_note.note_type}[/dim]")
+    if created_note.project:
+        parts.append(f"@{created_note.project}")
     if created_note.tags:
-        console.print(f"Tags: {', '.join(created_note.tags)}")
+        parts.append(" ".join(f"#{t}" for t in created_note.tags))
+    if created_note.category and created_note.category != "general":
+        parts.append(created_note.category)
+    console.print("  ".join(parts))
+
+
+def _create_note_from_template(template_name, title, tags, category, project, no_ai, note_type):
+    """Create a note using a template. Opens editor with template body."""
+    storage = get_storage()
+    result = storage.load_template(template_name)
+    if not result:
+        console.print(f"[red]Template '{template_name}' not found.[/red]")
+        available = storage.list_templates()
+        if available:
+            console.print(f"[dim]Available: {', '.join(available)}[/dim]")
+        return
+
+    tmpl_meta, tmpl_body = result
+
+    # Prompt for title if not provided
+    if not title:
+        import questionary
+
+        title = questionary.text("Title:").ask()
+        if not title:
+            console.print("[red]Title is required.[/red]")
+            return
+
+    # Build editor content
+    editor_text = f"# {title}\n\n{tmpl_body}"
+    editor = "nvim" if shutil.which("nvim") else None
+    edited = click.edit(text=editor_text, editor=editor)
+    if edited is None:
+        console.print("[dim]Aborted.[/dim]")
+        return
+
+    # Parse result: first # Title line = title, rest = body
+    lines = edited.strip().split("\n")
+    if lines and lines[0].startswith("# "):
+        title = lines[0][2:].strip()
+        body = "\n".join(lines[1:]).strip()
+    else:
+        body = edited.strip()
+
+    # Merge: CLI args > template defaults > config defaults
+    merged_type = note_type or tmpl_meta.get("type") or template_name
+    merged_tags = list(tags) if tags else tmpl_meta.get("tags", [])
+    merged_category = category or tmpl_meta.get("category")
+    merged_project = project or tmpl_meta.get("project")
+
+    _create_note(title, body, tuple(merged_tags), merged_category, merged_project, no_ai, merged_type)
+
+
+def _fuzzy_select_note(prompt="Select a note:", note_list=None):
+    """Present a fuzzy-filterable note selector. Returns note ID or None."""
+    import questionary
+
+    if note_list is None:
+        note_list = notes.list_notes()
+
+    if not note_list:
+        console.print("[dim]No notes found.[/dim]")
+        return None
+
+    choices = []
+    for n in note_list:
+        tags_str = f"  [{', '.join(n.tags[:3])}]" if n.tags else ""
+        cat_str = f"  {n.category}" if n.category and n.category != "general" else ""
+        date_str = n.created_at.strftime("%m-%d")
+        label = f"{n.id[:6]}{cat_str}  {n.title}{tags_str}  {date_str}"
+        choices.append(questionary.Choice(title=label, value=n.id))
+
+    return questionary.select(
+        prompt,
+        choices=choices,
+        use_search_filter=True,
+        use_jk_keys=False,
+    ).ask()
+
+
+def _apply_note_filters(note_list, tags=None, category=None, project=None):
+    """Apply optional filters to a note list."""
+    if category:
+        note_list = [n for n in note_list if n.category and n.category.lower() == category.lower()]
+    if project:
+        note_list = [n for n in note_list if n.project and n.project.lower() == project.lower()]
+    if tags:
+        tag_set = set(tags)
+        note_list = [n for n in note_list if tag_set.issubset(set(n.tags))]
+    return note_list
+
+
+def _show_note_details(n):
+    """Display full note details."""
+    console.print(f"\n[bold cyan]{n.title}[/bold cyan]")
+    type_str = f" | Type: {n.note_type}" if n.note_type else ""
+    console.print(f"[dim]ID: {n.id} | Category: {n.category}{type_str}[/dim]")
+    if n.tags:
+        console.print(f"[dim]Tags: {', '.join(n.tags)}[/dim]")
+    if n.project:
+        console.print(f"[dim]Project: {n.project}[/dim]")
+    console.print(f"[dim]Created: {n.created_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+    console.print()
+    if n.content:
+        md = Markdown(n.content)
+        console.print(md)
     console.print()
 
 
 @cli.group()
-def notes_group():
+def note():
     """Manage notes."""
     pass
 
 
-cli.add_command(notes_group, name="notes")
+cli.add_command(click.Group(name="notes", commands=note.commands, help="Manage notes.", hidden=True))
 
 
-@notes_group.command(name="list")
+@note.command(name="create")
+@click.argument("content", required=False)
+@click.option("--tags", "-t", multiple=True, help="Tags")
+@click.option("--category", "-c", help="Category")
+@click.option("--project", "-p", help="Project")
+@click.option("--type", "-T", "note_type", help="Note type (e.g. meeting)")
+@click.option("--template", "template_name", help="Template name")
+@click.option("--no-ai", is_flag=True, help="Disable AI auto-tagging")
+def create_note_cmd(content, tags, category, project, note_type, template_name, no_ai):
+    """Create a note.
+
+    \b
+    Usage:
+      brain note create "quick thought"              Scratch pad (quick dump)
+      brain note create --template meeting            Template with editor
+      brain note create --template meeting "title"    Template with title
+      brain note create -T meeting "title"            Editor with type, no template
+      brain note create                               Prompt for title, open editor
+    """
+    # Template flow: always opens editor
+    if template_name:
+        _create_note_from_template(
+            template_name, content, tags, category, project, no_ai, note_type
+        )
+        return
+
+    # Type flag without template: open editor with blank body
+    if note_type:
+        title = content
+        if not title:
+            import questionary
+
+            title = questionary.text("Title:").ask()
+            if not title:
+                console.print("[red]Title is required.[/red]")
+                return
+
+        editor_text = f"# {title}\n\n"
+        editor = "nvim" if shutil.which("nvim") else None
+        edited = click.edit(text=editor_text, editor=editor)
+        if edited is None:
+            console.print("[dim]Aborted.[/dim]")
+            return
+
+        lines = edited.strip().split("\n")
+        if lines and lines[0].startswith("# "):
+            title = lines[0][2:].strip()
+            body = "\n".join(lines[1:]).strip()
+        else:
+            body = edited.strip()
+
+        _create_note(title, body, tags, category, project, no_ai, note_type)
+        return
+
+    # Bare content: quick dump to scratch pad
+    if content:
+        notes.quick_dump(content)
+        console.print(f"[bold green]Saved to scratch pad[/bold green]")
+        return
+
+    # No args, no flags: prompt for title, open editor
+    import questionary
+
+    title = questionary.text("Title:").ask()
+    if not title:
+        console.print("[red]Title is required.[/red]")
+        return
+
+    editor_text = f"# {title}\n\n"
+    editor = "nvim" if shutil.which("nvim") else None
+    edited = click.edit(text=editor_text, editor=editor)
+    if edited is None:
+        console.print("[dim]Aborted.[/dim]")
+        return
+
+    lines = edited.strip().split("\n")
+    if lines and lines[0].startswith("# "):
+        title = lines[0][2:].strip()
+        body = "\n".join(lines[1:]).strip()
+    else:
+        body = edited.strip()
+
+    _create_note(title, body, tags, category, project, no_ai)
+
+
+@note.command(name="list")
 @click.option("--tags", "-t", multiple=True, help="Filter by tags")
 @click.option("--category", "-c", help="Filter by category")
 @click.option("--project", "-p", help="Filter by project")
+@click.option("--type", "-T", "note_type", help="Filter by note type")
 @click.option("--limit", "-n", type=int, help="Limit number of results")
-def list_notes(tags, category, project, limit):
+def list_notes_cmd(tags, category, project, note_type, limit):
     """List all notes."""
     note_list = notes.list_notes(
         tags=list(tags) if tags else None,
         category=category,
         project=project,
+        note_type=note_type,
         limit=limit,
     )
 
@@ -156,17 +323,19 @@ def list_notes(tags, category, project, limit):
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("ID", style="dim", width=8)
     table.add_column("Title", style="bold")
+    table.add_column("Type", width=10)
     table.add_column("Category", width=12)
     table.add_column("Tags", width=25)
     table.add_column("Created", width=12)
 
-    for note in note_list:
+    for n in note_list:
         table.add_row(
-            note.id,
-            note.title[:50],
-            note.category,
-            ", ".join(note.tags[:3]),
-            note.created_at.strftime("%Y-%m-%d"),
+            n.id,
+            n.title[:50],
+            n.note_type or "",
+            n.category,
+            ", ".join(n.tags[:3]),
+            n.created_at.strftime("%Y-%m-%d"),
         )
 
     console.print()
@@ -174,109 +343,219 @@ def list_notes(tags, category, project, limit):
     console.print(f"\n[dim]Total: {len(note_list)} notes[/dim]\n")
 
 
-@notes_group.command(name="show")
+@note.command(name="show")
 @click.argument("note_id", required=False)
-def show_note(note_id):
+@click.option("--tags", "-t", multiple=True, help="Filter by tags")
+@click.option("--category", "-c", help="Filter by category")
+@click.option("--project", "-p", help="Filter by project")
+def show_note(note_id, tags, category, project):
     """Show a note."""
     if not note_id:
-        # Interactive selection
-        import questionary
-        
-        recent_notes = notes.list_notes(limit=20)
-        if not recent_notes:
-            console.print("[dim]No notes found.[/dim]")
-            return
-
-        choices = []
-        for note in recent_notes:
-            created = note.created_at.strftime("%Y-%m-%d")
-            choices.append(questionary.Choice(
-                title=f"{note.title} ({note.id}) - {created}",
-                value=note.id
-            ))
-            
-        note_id = questionary.select(
-            "Select a note to view:",
-            choices=choices
-        ).ask()
-        
+        has_filters = any([tags, category, project])
+        if has_filters:
+            note_list = notes.list_notes(
+                tags=list(tags) if tags else None, category=category, project=project
+            )
+        else:
+            note_list = None
+        note_id = _fuzzy_select_note("Show note (type to filter):", note_list)
         if not note_id:
             return
 
-    note = notes.get_note(note_id)
+    n = notes.get_note(note_id)
 
-    if not note:
+    if not n:
         console.print(f"[red]Note {note_id} not found.[/red]")
         sys.exit(1)
 
-    console.print(f"\n[bold cyan]{note.title}[/bold cyan]")
-    console.print(f"[dim]ID: {note.id} | Category: {note.category}[/dim]")
-    if note.tags:
-        console.print(f"[dim]Tags: {', '.join(note.tags)}[/dim]")
-    if note.project:
-        console.print(f"[dim]Project: {note.project}[/dim]")
-    console.print(f"[dim]Created: {note.created_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
-    console.print()
-
-    # Render markdown content
-    md = Markdown(note.content)
-    console.print(md)
-    console.print()
+    _show_note_details(n)
 
 
-@notes_group.command(name="search")
-@click.argument("query")
-@click.option("--limit", "-n", type=int, help="Limit number of results")
-def search_notes_cmd(query, limit):
-    """Search notes by content."""
-    results = notes.search_notes(query, limit=limit)
+@note.command(name="search")
+@click.argument("query", nargs=-1)
+@click.option("--tags", "-t", multiple=True, help="Filter by tags")
+@click.option("--category", "-c", help="Filter by category")
+@click.option("--project", "-p", help="Filter by project")
+@click.option("--limit", "-n", type=int, help="Limit results")
+def search_notes_cmd(query, tags, category, project, limit):
+    """Search notes by content.
 
-    if not results:
-        console.print(f"[dim]No notes found matching '{query}'.[/dim]")
+    \b
+    With QUERY: shows matching notes as a table.
+    Without QUERY: interactive fuzzy-filterable list.
+    """
+    query_str = " ".join(query) if query else None
+
+    if query_str:
+        results = notes.search_notes(query_str, limit=limit)
+        results = _apply_note_filters(results, tags=tags, category=category, project=project)
+
+        if not results:
+            console.print(f"[dim]No notes found matching '{query_str}'.[/dim]")
+            return
+
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("ID", style="dim", width=8)
+        table.add_column("Title", style="bold")
+        table.add_column("Preview", width=50)
+
+        for n in results:
+            preview = n.content[:100].replace("\n", " ")
+            table.add_row(n.id, n.title[:40], preview)
+
+        console.print()
+        console.print(table)
+        console.print(f"\n[dim]Found {len(results)} notes[/dim]\n")
         return
 
-    table = Table(show_header=True, header_style="bold cyan")
-    table.add_column("ID", style="dim", width=8)
-    table.add_column("Title", style="bold")
-    table.add_column("Preview", width=50)
+    # Interactive mode: fuzzy select
+    has_filters = any([tags, category, project])
+    if has_filters:
+        note_list = notes.list_notes(
+            tags=list(tags) if tags else None, category=category, project=project
+        )
+    else:
+        note_list = None
 
-    for note in results:
-        preview = note.content[:100].replace("\n", " ")
-        table.add_row(note.id, note.title[:40], preview)
+    selected_id = _fuzzy_select_note("Search notes (type to filter):", note_list)
+    if not selected_id:
+        return
 
-    console.print()
-    console.print(table)
-    console.print(f"\n[dim]Found {len(results)} notes[/dim]\n")
+    n = notes.get_note(selected_id)
+    if not n:
+        console.print(f"[red]Note {selected_id} not found.[/red]")
+        return
+
+    _show_note_details(n)
 
 
-@notes_group.command(name="edit")
-@click.argument("note_id")
-def edit_note(note_id):
-    """Edit a note."""
-    note = notes.get_note(note_id)
+@note.command(name="edit")
+@click.argument("note_id", required=False)
+@click.option("--tags", "-t", multiple=True, help="Filter by tags")
+@click.option("--category", "-c", help="Filter by category")
+@click.option("--project", "-p", help="Filter by project")
+def edit_note(note_id, tags, category, project):
+    """Edit a note in your editor."""
+    if not note_id:
+        has_filters = any([tags, category, project])
+        if has_filters:
+            note_list = notes.list_notes(
+                tags=list(tags) if tags else None, category=category, project=project
+            )
+        else:
+            note_list = None
+        note_id = _fuzzy_select_note("Edit note (type to filter):", note_list)
+        if not note_id:
+            return
 
-    if not note:
+    n = notes.get_note(note_id)
+
+    if not n:
         console.print(f"[red]Note {note_id} not found.[/red]")
         sys.exit(1)
 
-    # Edit content
-    new_content = click.edit(note.content)
-    if new_content and new_content != note.content:
-        notes.update_note(note_id, content=new_content)
-        console.print(f"[bold green]✓ Note updated![/bold green]")
-    else:
-        console.print("[dim]No changes made.[/dim]")
+    if not n.file_path or not n.file_path.exists():
+        console.print("[red]Error: Note file not found on disk.[/red]")
+        sys.exit(1)
+
+    editor = "nvim" if shutil.which("nvim") else None
+    if not editor and not os.environ.get("EDITOR"):
+        console.print("[yellow]NVIM not found and EDITOR not set. Using default.[/yellow]")
+
+    click.edit(filename=str(n.file_path), editor=editor)
+
+    storage = get_storage()
+    updated_note = storage._read_note_file(n.file_path)
+    storage.save_note(updated_note)
+
+    console.print(f"[bold green]✓ Note {note_id} updated![/bold green]")
 
 
-@notes_group.command(name="delete")
-@click.argument("note_id")
-@click.confirmation_option(prompt="Are you sure you want to delete this note?")
-def delete_note(note_id):
-    """Delete a note."""
-    if notes.delete_note(note_id):
-        console.print(f"[bold green]✓ Note {note_id} deleted.[/bold green]")
+@note.command(name="delete")
+@click.argument("note_ids", nargs=-1)
+@click.option("--all", "delete_all", is_flag=True, help="Delete all notes")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@click.option("--tags", "-t", multiple=True, help="Filter by tags")
+@click.option("--category", "-c", help="Filter by category")
+@click.option("--project", "-p", help="Filter by project")
+def delete_note(note_ids, delete_all, yes, tags, category, project):
+    """Delete one or more notes.
+
+    \b
+    brain note delete abc123        # delete by ID
+    brain note delete a1 b2 c3      # delete multiple
+    brain note delete --all         # delete everything
+    brain note delete -t work       # filtered fuzzy select
+    """
+    storage = get_storage()
+
+    if delete_all:
+        ids = list(storage.index.notes.keys())
+        label = f"all {len(ids)} notes"
+    elif note_ids:
+        ids = list(note_ids)
+        label = f"{len(ids)} note(s)"
     else:
-        console.print(f"[red]Note {note_id} not found.[/red]")
+        has_filters = any([tags, category, project])
+        if has_filters:
+            note_list = notes.list_notes(
+                tags=list(tags) if tags else None, category=category, project=project
+            )
+        else:
+            note_list = None
+        selected_id = _fuzzy_select_note("Delete note (type to filter):", note_list)
+        if not selected_id:
+            return
+        ids = [selected_id]
+        label = "1 note"
+
+    if not ids:
+        console.print("[dim]No matching notes found.[/dim]")
+        return
+
+    if not yes:
+        if not click.confirm(f"Delete {label}?"):
+            console.print("[dim]Cancelled.[/dim]")
+            return
+
+    deleted = 0
+    for nid in ids:
+        if notes.delete_note(nid):
+            deleted += 1
+        else:
+            console.print(f"[yellow]Note {nid} not found.[/yellow]")
+
+    console.print(f"[bold green]Deleted {deleted} note(s)[/bold green]")
+
+
+@note.command(name="scratch")
+def note_scratch_cmd():
+    """Open the scratch pad in your editor."""
+    storage = get_storage()
+    scratch = storage.scratch_file
+
+    if not scratch.exists():
+        scratch.parent.mkdir(parents=True, exist_ok=True)
+        scratch.write_text("# Scratch Pad\n")
+
+    editor = "nvim" if shutil.which("nvim") else None
+    click.edit(filename=str(scratch), editor=editor)
+
+
+@note.command(name="template")
+def note_template_cmd():
+    """Open the templates directory in your editor."""
+    config = get_config()
+    templates_dir = config.templates_dir
+    templates_dir.mkdir(parents=True, exist_ok=True)
+
+    editor = "nvim" if shutil.which("nvim") else None
+    if editor:
+        import subprocess
+
+        subprocess.run([editor, str(templates_dir)])
+    else:
+        click.launch(str(templates_dir))
 
 
 # ============================================================================
@@ -484,7 +763,7 @@ def create_task_cmd(titles, interactive, input_file, batch):
 
 
 # Keep `brain tasks` as alias
-cli.add_command(task, name="tasks")
+cli.add_command(click.Group(name="tasks", commands=task.commands, help="Manage tasks.", hidden=True))
 
 
 @task.command(name="list")
@@ -745,10 +1024,6 @@ def show_task(task_id, status, priority, project, tags, due, assignee):
         console.print(md)
     console.print()
 
-
-import shutil
-
-# ... existing code ...
 
 @task.command(name="edit")
 @click.argument("task_id", required=False)

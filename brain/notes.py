@@ -16,6 +16,7 @@ def create_note(
     tags: Optional[list[str]] = None,
     category: Optional[str] = None,
     project: Optional[str] = None,
+    note_type: Optional[str] = None,
     auto_tag: bool = False,
     extra: Optional[dict] = None,
 ) -> Note:
@@ -60,6 +61,7 @@ def create_note(
     note = Note(
         title=title,
         content=content,
+        note_type=note_type,
         tags=tags,
         category=category,
         project=project,
@@ -174,10 +176,21 @@ def delete_note(note_id: str) -> bool:
     return storage.delete_note(note_id)
 
 
+def quick_dump(content: str) -> None:
+    """Append a quick thought to the scratch pad.
+
+    Args:
+        content: Text to dump
+    """
+    storage = get_storage()
+    storage.append_scratch(content)
+
+
 def list_notes(
     tags: Optional[list[str]] = None,
     category: Optional[str] = None,
     project: Optional[str] = None,
+    note_type: Optional[str] = None,
     limit: Optional[int] = None,
 ) -> list[Note]:
     """List notes with optional filtering.
@@ -186,22 +199,26 @@ def list_notes(
         tags: Filter by tags
         category: Filter by category
         project: Filter by project
+        note_type: Filter by note type
         limit: Maximum number of notes to return
 
     Returns:
         List of notes
     """
     storage = get_storage()
-    notes = storage.list_notes(
+    all_notes = storage.list_notes(
         tags=tags,
         category=category,
         project=project
     )
 
-    if limit:
-        notes = notes[:limit]
+    if note_type:
+        all_notes = [n for n in all_notes if n.note_type == note_type]
 
-    return notes
+    if limit:
+        all_notes = all_notes[:limit]
+
+    return all_notes
 
 
 def search_notes(query: str, limit: Optional[int] = None) -> list[Note]:
