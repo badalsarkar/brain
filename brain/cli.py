@@ -553,52 +553,21 @@ def _print_task_table(task_list):
     console.print(f"\n[dim]Total: {len(task_list)} tasks[/dim]\n")
 
 
-@task.command(name="search")
-@click.argument("query", nargs=-1)
-@click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "done", "blocked"]))
-@click.option("--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]))
-@click.option("--project", "--proj", help="Filter by project")
-@click.option("--tags", "-t", multiple=True, help="Filter by tags")
-@click.option("--due", "-d", help="Filter by due date (today, overdue, week, or YYYY-MM-DD)")
-@click.option("--assignee", "-a", help="Filter by assignee")
-def search_task_cmd(query, status, priority, project, tags, due, assignee):
-    """Search tasks with fuzzy matching and filters.
-
-    With QUERY: shows matching tasks as a table.
-    Without QUERY: interactive fuzzy-filterable list.
-    """
-    import questionary
-    from datetime import timedelta
-
-    query_str = " ".join(query) if query else None
-    has_filters = any([status, priority, project, tags, due, assignee])
-
-    # Get base task list
-    if query_str:
-        task_list = tasks.search_tasks(query_str)
-    else:
-        task_list = tasks.list_tasks(
-            status=status,
-            tags=list(tags) if tags else None,
-            project=project,
-        )
-        # If no query and no filters, default to non-complete tasks
-        if not has_filters:
-            task_list = [t for t in task_list if t.status != TaskStatus.DONE]
-
-    # Apply filters (on search results, or additional filters beyond list_tasks)
-    if query_str and status:
+def _apply_task_filters(task_list, status=None, priority=None, project=None, tags=None, due=None, assignee=None):
+    """Apply optional filters to a task list."""
+    if status:
         task_list = [t for t in task_list if t.status.value == status]
-    if query_str and tags:
-        tag_set = set(tags)
-        task_list = [t for t in task_list if tag_set.issubset(set(t.tags))]
-    if query_str and project:
-        task_list = [t for t in task_list if t.project and t.project.lower() == project.lower()]
     if priority:
         task_list = [t for t in task_list if t.priority.value == priority]
+    if project:
+        task_list = [t for t in task_list if t.project and t.project.lower() == project.lower()]
+    if tags:
+        tag_set = set(tags)
+        task_list = [t for t in task_list if tag_set.issubset(set(t.tags))]
     if assignee:
         task_list = [t for t in task_list if t.assignee and t.assignee.lower() == assignee.lower()]
     if due:
+        from datetime import timedelta
         now = datetime.now()
         filtered = []
         for t in task_list:
@@ -618,6 +587,75 @@ def search_task_cmd(query, status, priority, project, tags, due, assignee):
                 except ValueError:
                     pass
         task_list = filtered
+    return task_list
+
+
+def _fuzzy_select_task(prompt="Select a task:", task_list=None):
+    """Present a fuzzy-filterable task selector. Returns task ID or None."""
+    import questionary
+
+    if task_list is None:
+        task_list = tasks.list_tasks(status=None)
+
+    if not task_list:
+        console.print("[dim]No tasks found.[/dim]")
+        return None
+
+    choices = []
+    for t in task_list:
+        priority_abbr = t.priority.value[0].upper()
+        due_str = f" due:{t.due_date.strftime('%m-%d')}" if t.due_date else ""
+        label = f"{t.id[:6]}  {priority_abbr}  [{t.status.value}]  {t.title}{due_str}"
+        choices.append(questionary.Choice(title=label, value=t.id))
+
+    return questionary.select(
+        prompt,
+        choices=choices,
+        use_search_filter=True,
+        use_jk_keys=False,
+    ).ask()
+
+
+@task.command(name="search")
+@click.argument("query", nargs=-1)
+@click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "done", "blocked"]))
+@click.option("--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]))
+@click.option("--project", "--proj", help="Filter by project")
+@click.option("--tags", "-t", multiple=True, help="Filter by tags")
+@click.option("--due", "-d", help="Filter by due date (today, overdue, week, or YYYY-MM-DD)")
+@click.option("--assignee", "-a", help="Filter by assignee")
+def search_task_cmd(query, status, priority, project, tags, due, assignee):
+    """Search tasks with fuzzy matching and filters.
+
+    With QUERY: shows matching tasks as a table.
+    Without QUERY: interactive fuzzy-filterable list.
+    """
+    import questionary
+
+    query_str = " ".join(query) if query else None
+    has_filters = any([status, priority, project, tags, due, assignee])
+
+    # Get base task list
+    if query_str:
+        task_list = tasks.search_tasks(query_str)
+        # Apply all filters on search results
+        task_list = _apply_task_filters(
+            task_list, status=status, priority=priority, project=project,
+            tags=tags, due=due, assignee=assignee,
+        )
+    else:
+        task_list = tasks.list_tasks(
+            status=status,
+            tags=list(tags) if tags else None,
+            project=project,
+        )
+        # If no query and no filters, default to non-complete tasks
+        if not has_filters:
+            task_list = [t for t in task_list if t.status != TaskStatus.DONE]
+        # Apply filters not handled by list_tasks
+        task_list = _apply_task_filters(
+            task_list, priority=priority, assignee=assignee, due=due,
+        )
 
     if not task_list:
         console.print("[dim]No tasks found.[/dim]")
@@ -629,19 +667,7 @@ def search_task_cmd(query, status, priority, project, tags, due, assignee):
         return
 
     # Interactive mode: fuzzy select
-    choices = []
-    for t in task_list:
-        priority_abbr = t.priority.value[0].upper()
-        due_str = f" due:{t.due_date.strftime('%m-%d')}" if t.due_date else ""
-        label = f"{t.id[:6]}  {priority_abbr}  [{t.status.value}]  {t.title}{due_str}"
-        choices.append(questionary.Choice(title=label, value=t.id))
-
-    selected_id = questionary.select(
-        "Search tasks (type to filter):",
-        choices=choices,
-        use_search_filter=True,
-        use_jk_keys=False,
-    ).ask()
+    selected_id = _fuzzy_select_task("Search tasks (type to filter):", task_list)
 
     if not selected_id:
         return
@@ -675,30 +701,22 @@ def search_task_cmd(query, status, priority, project, tags, due, assignee):
 
 @task.command(name="show")
 @click.argument("task_id", required=False)
-def show_task(task_id):
+@click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "done", "blocked"]))
+@click.option("--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]))
+@click.option("--project", "--proj", help="Filter by project")
+@click.option("--tags", "-t", multiple=True, help="Filter by tags")
+@click.option("--due", "-d", help="Filter by due date (today, overdue, week, or YYYY-MM-DD)")
+@click.option("--assignee", "-a", help="Filter by assignee")
+def show_task(task_id, status, priority, project, tags, due, assignee):
     """Show task details."""
     if not task_id:
-        # Interactive selection
-        import questionary
-        
-        recent_tasks = tasks.list_tasks(limit=20, status=None) # List all statuses
-        if not recent_tasks:
-            console.print("[dim]No tasks found.[/dim]")
-            return
-
-        choices = []
-        for task in recent_tasks:
-            status_color = "green" if task.status == TaskStatus.DONE else "yellow"
-            choices.append(questionary.Choice(
-                title=f"[{task.status.value}] {task.title}",
-                value=task.id
-            ))
-
-        task_id = questionary.select(
-            "Select a task:",
-            choices=choices
-        ).ask()
-        
+        has_filters = any([status, priority, project, tags, due, assignee])
+        if has_filters:
+            task_list = tasks.list_tasks(status=status, tags=list(tags) if tags else None, project=project)
+            task_list = _apply_task_filters(task_list, priority=priority, assignee=assignee, due=due)
+        else:
+            task_list = None
+        task_id = _fuzzy_select_task("Show task (type to filter):", task_list)
         if not task_id:
             return
 
@@ -733,111 +751,65 @@ import shutil
 # ... existing code ...
 
 @task.command(name="edit")
-@click.argument("task_id")
-@click.option("--title", help="New title")
+@click.argument("task_id", required=False)
 @click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "done", "blocked"]))
 @click.option("--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]))
-@click.option("--due", help="New due date")
-@click.option("--tags", "-t", multiple=True, help="New tags (replaces existing)")
-@click.option("--project", help="New project")
-@click.option("--assign", "-a", help="Assign task")
-@click.option("--description", "-d", is_flag=True, help="Edit description interactively")
-def edit_task(task_id, title, status, priority, due, tags, project, assign, description):
-    """Edit a task.
-    
-    If no options are provided, opens the task file in an editor (NVIM preferred).
-    """
+@click.option("--project", "--proj", help="Filter by project")
+@click.option("--tags", "-t", multiple=True, help="Filter by tags")
+@click.option("--due", "-d", help="Filter by due date (today, overdue, week, or YYYY-MM-DD)")
+@click.option("--assignee", "-a", help="Filter by assignee")
+def edit_task(task_id, status, priority, project, tags, due, assignee):
+    """Edit a task in your editor."""
+    if not task_id:
+        has_filters = any([status, priority, project, tags, due, assignee])
+        if has_filters:
+            task_list = tasks.list_tasks(status=status, tags=list(tags) if tags else None, project=project)
+            task_list = _apply_task_filters(task_list, priority=priority, assignee=assignee, due=due)
+        else:
+            task_list = None
+        task_id = _fuzzy_select_task("Edit task (type to filter):", task_list)
+        if not task_id:
+            return
+
     task = tasks.get_task(task_id)
 
     if not task:
         console.print(f"[red]Task {task_id} not found.[/red]")
         sys.exit(1)
 
-    # Check if any specific fields are being updated
-    flags_provided = any([title, status, priority, due, tags, project, assign, description])
+    if not task.file_path or not task.file_path.exists():
+        console.print("[red]Error: Task file not found on disk.[/red]")
+        sys.exit(1)
 
-    if not flags_provided:
-        # Open in editor (NVIM preferred as requested)
-        if not task.file_path or not task.file_path.exists():
-            console.print("[red]Error: Task file not found on disk.[/red]")
-            sys.exit(1)
+    editor = "nvim" if shutil.which("nvim") else None
+    if not editor and not os.environ.get("EDITOR"):
+        console.print("[yellow]NVIM not found and EDITOR not set. Using default.[/yellow]")
 
-        editor = "nvim" if shutil.which("nvim") else None
-        if not editor and not os.environ.get("EDITOR"):
-            console.print("[yellow]NVIM not found and EDITOR not set. Using default.[/yellow]")
-        
-        click.edit(filename=str(task.file_path), editor=editor)
-        
-        # Reload and save to update index and potentially rename file
-        storage = get_storage()
-        # Re-read the file to get changes
-        updated_task_obj = storage._read_task_file(task.file_path)
-        storage.save_task(updated_task_obj)
-        
-        console.print(f"[bold green]✓ Task {task_id} updated from file![/bold green]")
-        return
+    click.edit(filename=str(task.file_path), editor=editor)
 
-    # Interactive description editing
-    new_description = None
-    if description:
-        new_description = click.edit(task.description)
-        if new_description is not None:
-            new_description = new_description.strip()
+    storage = get_storage()
+    updated_task_obj = storage._read_task_file(task.file_path)
+    storage.save_task(updated_task_obj)
 
-    updated_task = tasks.update_task(
-        task_id,
-        title=title,
-        status=status,
-        priority=priority,
-        due_date=due,
-        tags=list(tags) if tags else None,
-        project=project,
-        assignee=assign,
-        description=new_description,
-    )
-
-    if updated_task:
-        console.print(f"[bold green]✓ Task {task_id} updated![/bold green]")
-        if title:
-            console.print(f"Title: {updated_task.title}")
-        if updated_task.assignee:
-            console.print(f"Assignee: {updated_task.assignee}")
-        # ... other prints ...
+    console.print(f"[bold green]✓ Task {task_id} updated![/bold green]")
 
 
 
 @task.command(name="done")
 @click.argument("task_id", required=False)
-def complete_task_cmd(task_id):
+@click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "blocked"]))
+@click.option("--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]))
+@click.option("--project", "--proj", help="Filter by project")
+@click.option("--tags", "-t", multiple=True, help="Filter by tags")
+@click.option("--due", "-d", help="Filter by due date (today, overdue, week, or YYYY-MM-DD)")
+@click.option("--assignee", "-a", help="Filter by assignee")
+def complete_task_cmd(task_id, status, priority, project, tags, due, assignee):
     """Mark a task as complete."""
     if not task_id:
-        # Interactive selection (only show pending tasks)
-        import questionary
-        
-        # Get pending tasks
-        all_tasks = tasks.list_tasks(limit=50, status=None)
-        pending_tasks = [t for t in all_tasks if t.status != TaskStatus.DONE]
-        
-        if not pending_tasks:
-            console.print("[dim]No pending tasks found.[/dim]")
-            return
-
-        choices = []
-        for task in pending_tasks:
-            priority_icon = "🔴" if task.priority == TaskPriority.URGENT else "⚪"
-            # simple text distinction
-            p_label = f"[{task.priority.value.upper()}]"
-            
-            choices.append(questionary.Choice(
-                title=f"{p_label} {task.title}",
-                value=task.id
-            ))
-
-        task_id = questionary.select(
-            "Select a task to complete:",
-            choices=choices
-        ).ask()
-        
+        pending = tasks.list_tasks(status=status, tags=list(tags) if tags else None, project=project)
+        pending = [t for t in pending if t.status != TaskStatus.DONE]
+        pending = _apply_task_filters(pending, priority=priority, assignee=assignee, due=due)
+        task_id = _fuzzy_select_task("Complete task (type to filter):", pending)
         if not task_id:
             return
 
@@ -858,7 +830,13 @@ def complete_task_cmd(task_id):
 @click.option("--all", "delete_all", is_flag=True, help="Delete all tasks")
 @click.option("--done", "delete_done", is_flag=True, help="Delete all completed tasks")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
-def delete_task_cmd(task_ids, delete_all, delete_done, yes):
+@click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "done", "blocked"]))
+@click.option("--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]))
+@click.option("--project", "--proj", help="Filter by project")
+@click.option("--tags", "-t", multiple=True, help="Filter by tags")
+@click.option("--due", "-d", help="Filter by due date")
+@click.option("--assignee", "-a", help="Filter by assignee")
+def delete_task_cmd(task_ids, delete_all, delete_done, yes, status, priority, project, tags, due, assignee):
     """Delete one or more tasks.
 
     \b
@@ -882,8 +860,14 @@ def delete_task_cmd(task_ids, delete_all, delete_done, yes):
         ids = list(task_ids)
         label = f"{len(ids)} task(s)"
     else:
-        console.print("[red]Provide task ID(s), --done, or --all.[/red]")
-        sys.exit(1)
+        task_list = tasks.list_tasks(status=status, tags=list(tags) if tags else None, project=project)
+        task_list = _apply_task_filters(task_list, priority=priority, assignee=assignee, due=due)
+        has_filters = any([status, priority, project, tags, due, assignee])
+        selected_id = _fuzzy_select_task("Delete task (type to filter):", task_list if has_filters else None)
+        if not selected_id:
+            return
+        ids = [selected_id]
+        label = "1 task"
 
     if not ids:
         console.print("[dim]No matching tasks found.[/dim]")
