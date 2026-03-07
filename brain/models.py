@@ -27,10 +27,19 @@ class TaskPriority(str, Enum):
     URGENT = "urgent"
 
 
+class ProjectStatus(str, Enum):
+    """Project status enumeration."""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    COMPLETED = "completed"
+
+
 class Project(BaseModel):
     """Rich project model."""
 
     name: str # canonical name
+    status: ProjectStatus = ProjectStatus.ACTIVE
     description: str = ""
     end_date: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.now)
@@ -41,6 +50,7 @@ class Project(BaseModel):
         """Convert to dictionary for YAML frontmatter."""
         return {
             "name": self.name,
+            "status": self.status.value,
             "end_date": self.end_date.isoformat() if self.end_date else None,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
@@ -51,6 +61,7 @@ class Project(BaseModel):
         """Create Project from frontmatter metadata and content."""
         return cls(
             name=metadata.get("name", file_path.stem),
+            status=ProjectStatus(metadata.get("status", "active")),
             description=content,
             end_date=datetime.fromisoformat(metadata["end_date"])
             if metadata.get("end_date")

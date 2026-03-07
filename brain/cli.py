@@ -16,7 +16,7 @@ from brain.config import get_config, reload_config
 from brain.storage import get_storage
 from brain.git_utils import get_git_manager
 from brain import notes, tasks, projects as projects_mod
-from brain.models import TaskStatus, TaskPriority
+from brain.models import TaskStatus, TaskPriority, ProjectStatus
 from brain.utils import parse_date
 from brain.focus import show_focus_view, show_stats
 
@@ -1529,63 +1529,86 @@ def tags_delete(name):
         console.print(f"[yellow]Tag '{name}' not found.[/yellow]")
 
 
-@cli.group(invoke_without_command=True)
+@cli.group()
+def project():
+    """Manage projects (list, create, show, archive, rename, delete)."""
+    pass
+
+
+@project.command(name="list")
+@click.option("--all", "-a", "show_all", is_flag=True, help="Show all projects including archived/completed")
+@click.option("--status", "-s", type=click.Choice(["active", "archived", "completed"]), default=None, help="Filter by status")
 @click.option("--sort", type=click.Choice(["name", "count"]), default="count", help="Sort by name or count")
-@click.pass_context
-def projects(ctx, sort):
-    """Manage projects (list, rename, delete)."""
-    if ctx.invoked_subcommand is None:
-        # Default behavior: list projects
-        storage = get_storage()
-        # Prepare data
-        rich_projects = storage.list_projects_metadata()
-        all_project_names = set(storage.index.projects.keys()) | set(rich_projects.keys())
-        
-        if not all_project_names:
-            console.print("[dim]No projects found.[/dim]")
-            return
+def project_list(show_all, status, sort):
+    """List projects."""
+    storage = get_storage()
+    rich_projects = storage.list_projects_metadata()
+    all_project_names = set(storage.index.projects.keys()) | set(rich_projects.keys())
 
-        project_data = []
-        for project in all_project_names:
-            ids = storage.index.projects.get(project, [])
-            notes_count = 0
-            tasks_count = 0
-            for item_id in ids:
-                if item_id in storage.index.notes:
-                    notes_count += 1
-                elif item_id in storage.index.tasks:
-                    tasks_count += 1
-            
-            project_data.append((project, notes_count, tasks_count, len(ids)))
+    if not all_project_names:
+        console.print("[dim]No projects found.[/dim]")
+        return
 
-        # Sort
-        if sort == "name":
-            project_data.sort(key=lambda x: x[0])
-        else:
-            project_data.sort(key=lambda x: x[3], reverse=True)
+    # Determine effective status filter
+    if status:
+        filter_status = status
+    elif show_all:
+        filter_status = None
+    else:
+        filter_status = "active"
 
-        table = Table(show_header=True, header_style="bold cyan")
-        table.add_column("Project", style="bold")
-        table.add_column("Meta", justify="center")
-        table.add_column("Notes", justify="right")
-        table.add_column("Tasks", justify="right")
-        table.add_column("Total", justify="right")
+    project_data = []
+    for proj_name in all_project_names:
+        ids = storage.index.projects.get(proj_name, [])
+        notes_count = sum(1 for i in ids if i in storage.index.notes)
+        tasks_count = sum(1 for i in ids if i in storage.index.tasks)
 
-        rich_projects = storage.list_projects_metadata()
+        # Determine project status
+        proj_meta = rich_projects.get(proj_name)
+        proj_status = proj_meta.status.value if proj_meta else "active"
 
-        for project, n_count, t_count, total in project_data:
-            has_meta = "✓" if project in rich_projects else ""
-            table.add_row(project, has_meta, str(n_count), str(t_count), str(total))
+        if filter_status and proj_status != filter_status:
+            continue
 
-        console.print()
-        console.print(table)
-        console.print(f"\n[dim]Total: {len(project_data)} projects[/dim]\n")
+        project_data.append((proj_name, notes_count, tasks_count, len(ids), proj_status))
+
+    if not project_data:
+        console.print("[dim]No projects match the filter.[/dim]")
+        return
+
+    if sort == "name":
+        project_data.sort(key=lambda x: x[0])
+    else:
+        project_data.sort(key=lambda x: x[3], reverse=True)
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Project", style="bold")
+    table.add_column("Status", justify="center")
+    table.add_column("Notes", justify="right")
+    table.add_column("Tasks", justify="right")
+    table.add_column("Total", justify="right")
+
+    status_colors = {"active": "green", "archived": "dim", "completed": "cyan"}
+
+    for proj_name, n_count, t_count, total, proj_status in project_data:
+        color = status_colors.get(proj_status, "white")
+        table.add_row(
+            proj_name,
+            f"[{color}]{proj_status}[/{color}]",
+            str(n_count),
+            str(t_count),
+            str(total),
+        )
+
+    console.print()
+    console.print(table)
+    console.print(f"\n[dim]Total: {len(project_data)} projects[/dim]\n")
 
 
-@projects.command(name="rename")
+@project.command(name="rename")
 @click.argument("old_name")
 @click.argument("new_name")
-def projects_rename(old_name, new_name):
+def project_rename(old_name, new_name):
     """Rename a project."""
     storage = get_storage()
     count = storage.rename_project(old_name, new_name)
@@ -1595,10 +1618,10 @@ def projects_rename(old_name, new_name):
         console.print(f"[yellow]Project '{old_name}' not found or no items updated.[/yellow]")
 
 
-@projects.command(name="delete")
+@project.command(name="delete")
 @click.argument("name")
 @click.confirmation_option(prompt="Are you sure you want to delete this project from all items?")
-def projects_delete(name):
+def project_delete(name):
     """Delete a project."""
     storage = get_storage()
     count = storage.delete_project(name)
@@ -1608,61 +1631,90 @@ def projects_delete(name):
         console.print(f"[yellow]Project '{name}' not found.[/yellow]")
 
 
-@projects.command(name="create")
-@click.option("--name", "-n", help="Project name")
+@project.command(name="create")
+@click.argument("name", required=False)
 @click.option("--description", "-d", help="Project description")
 @click.option("--end-date", "-e", help="Project end date (e.g., 'next month')")
-@click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
-def projects_create(name, description, end_date, interactive):
-    """Create a new project."""
-    if interactive:
+def project_create(name, description, end_date):
+    """Create a new project.
+
+    NAME is the project name. If omitted, you'll be prompted interactively.
+    """
+    if not name:
         import questionary
-        
+
+        name = questionary.text("Project Name:").ask()
         if not name:
-            name = questionary.text("Project Name:").ask()
-            if not name:
-                console.print("[red]Project name is required.[/red]")
-                return
+            console.print("[red]Project name is required.[/red]")
+            return
 
         if not description:
-            description = questionary.text("Description:").ask()
+            description = click.edit("")
+            if description is not None:
+                description = description.strip()
 
-        if not end_date:
-            end_date = questionary.text("End Date (optional, e.g., 'next friday'):").ask()
-
-    if not name:
-        console.print("[red]Project name is required. Use --name or --interactive.[/red]")
-        sys.exit(1)
-
-    project = projects_mod.create_project(
+    proj = projects_mod.create_project(
         name=name,
         description=description or "",
-        end_date=end_date
+        end_date=end_date,
     )
 
-    console.print(f"\n[bold green]✓ Project '{project.name}' created/updated![/bold green]")
-    if project.end_date:
-        console.print(f"End Date: {project.end_date.strftime('%Y-%m-%d')}")
+    console.print(f"\n[bold green]✓ Project '{proj.name}' created/updated![/bold green]")
+    if proj.end_date:
+        console.print(f"End Date: {proj.end_date.strftime('%Y-%m-%d')}")
     console.print()
 
 
-@projects.command(name="show")
-@click.argument("name")
-def projects_show(name):
+@project.command(name="show")
+@click.argument("name", required=False)
+def project_show(name):
     """Show project details."""
     storage = get_storage()
+
+    if name is None:
+        # Interactive selection from active projects
+        all_metadata = storage.list_projects_metadata()
+        index_names = set(storage.index.projects.keys())
+        metadata_names = set(all_metadata.keys())
+        all_names = index_names | metadata_names
+
+        # Filter to active projects only
+        active_names = []
+        for n in sorted(all_names):
+            meta = all_metadata.get(n)
+            if meta and meta.status.value != "active":
+                continue
+            item_count = len(storage.index.projects.get(n, []))
+            active_names.append((n, item_count))
+
+        if not active_names:
+            console.print("[dim]No active projects found.[/dim]")
+            return
+
+        import questionary
+
+        choices = [f"{n} ({count} items)" for n, count in active_names]
+        selected = questionary.select("Select a project:", choices=choices).ask()
+        if not selected:
+            return
+        name = selected.split(" (")[0]
+
     project_meta = projects_mod.get_project(name)
-    
-    # Check if project exists in index (even if no rich metadata)
+
     canonical_name = storage.get_canonical_project(name)
     has_index = canonical_name in storage.index.projects
-    
+
     if not project_meta and not has_index:
         console.print(f"[red]Project '{name}' not found.[/red]")
         return
 
     console.print(f"\n[bold cyan]Project: {canonical_name}[/bold cyan]")
-    
+
+    if project_meta:
+        status_colors = {"active": "green", "archived": "dim", "completed": "cyan"}
+        color = status_colors.get(project_meta.status.value, "white")
+        console.print(f"[bold]Status:[/bold] [{color}]{project_meta.status.value}[/{color}]")
+
     if project_meta and project_meta.description:
         console.print("\n[bold]Description:[/bold]")
         console.print(Markdown(project_meta.description))
@@ -1676,30 +1728,86 @@ def projects_show(name):
     ids = storage.index.projects.get(canonical_name, [])
     notes_count = sum(1 for i in ids if i in storage.index.notes)
     tasks_count = sum(1 for i in ids if i in storage.index.tasks)
-    
-    console.print(f"\n[dim]Stats: {notes_count} notes, {tasks_count} tasks[/dim]\n")
+    console.print(f"\n[dim]Stats: {notes_count} notes, {tasks_count} tasks[/dim]")
+
+    # Show actual items
+    proj_notes, proj_tasks = storage.get_project_items(canonical_name)
+
+    if proj_notes:
+        console.print(f"\n[bold]Notes ({len(proj_notes)}):[/bold]")
+        notes_table = Table(show_header=True, header_style="bold")
+        notes_table.add_column("Title")
+        notes_table.add_column("Date", justify="right")
+        notes_table.add_column("Tags")
+        for n in proj_notes:
+            notes_table.add_row(
+                n.title,
+                n.created_at.strftime("%Y-%m-%d"),
+                ", ".join(n.tags) if n.tags else "",
+            )
+        console.print(notes_table)
+
+    if proj_tasks:
+        console.print(f"\n[bold]Tasks ({len(proj_tasks)}):[/bold]")
+        tasks_table = Table(show_header=True, header_style="bold")
+        tasks_table.add_column("ID", justify="right")
+        tasks_table.add_column("Title")
+        tasks_table.add_column("Status")
+        tasks_table.add_column("Priority")
+        tasks_table.add_column("Due", justify="right")
+
+        priority_colors = {"low": "dim", "medium": "white", "high": "yellow", "urgent": "red"}
+        status_style = {"todo": "white", "in-progress": "cyan", "done": "green", "blocked": "red"}
+
+        for t in proj_tasks:
+            p_color = priority_colors.get(t.priority.value, "white")
+            s_color = status_style.get(t.status.value, "white")
+            tasks_table.add_row(
+                str(t.id),
+                t.title,
+                f"[{s_color}]{t.status.value}[/{s_color}]",
+                f"[{p_color}]{t.priority.value}[/{p_color}]",
+                t.due_date.strftime("%Y-%m-%d") if t.due_date else "",
+            )
+        console.print(tasks_table)
+
+    console.print()
 
 
-@projects.command(name="edit")
+@project.command(name="archive")
 @click.argument("name")
-def projects_edit(name):
+def project_archive(name):
+    """Archive a project."""
+    result = projects_mod.set_project_status(name, "archived")
+    if result:
+        console.print(f"[bold green]✓ Project '{result.name}' archived.[/bold green]")
+    else:
+        console.print(f"[yellow]Project '{name}' not found.[/yellow]")
+
+
+@project.command(name="edit")
+@click.argument("name")
+def project_edit(name):
     """Edit project description."""
     storage = get_storage()
     canonical_name = storage.get_canonical_project(name)
-    
-    # It's okay to edit a project that doesn't exist in index yet (to pre-create metadata)
-    project = storage.get_project(canonical_name)
-    if not project:
-        from brain.models import Project
-        project = Project(name=canonical_name, description="")
 
-    new_description = click.edit(project.description)
+    proj = storage.get_project(canonical_name)
+    if not proj:
+        from brain.models import Project
+        proj = Project(name=canonical_name, description="")
+
+    new_description = click.edit(proj.description)
     if new_description is not None:
-        project.description = new_description.strip()
-        storage.save_project(project)
+        proj.description = new_description.strip()
+        storage.save_project(proj)
         console.print(f"[bold green]✓ Project metadata updated for '{canonical_name}'[/bold green]")
     else:
         console.print("[dim]No changes made.[/dim]")
+
+
+# Add 'projects' as a hidden alias for 'project'
+cli.add_command(click.Group(name="projects", commands=project.commands, help=project.help, hidden=True))
 
 
 def main():

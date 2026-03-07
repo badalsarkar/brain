@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from brain.models import Project
+from brain.models import Project, ProjectStatus
 from brain.storage import get_storage
 from brain.utils import parse_date
 
@@ -61,3 +61,29 @@ def get_project(name: str) -> Optional[Project]:
     """Get project by name."""
     storage = get_storage()
     return storage.get_project(name)
+
+
+def set_project_status(name: str, status: str) -> Optional[Project]:
+    """Set a project's status.
+
+    Args:
+        name: Project name
+        status: New status value (active, archived, completed)
+
+    Returns:
+        Updated project or None if not found/created
+    """
+    storage = get_storage()
+    canonical = storage.get_canonical_project(name)
+
+    project = storage.get_project(canonical)
+    if not project:
+        # Create metadata if project exists in index but has no metadata file
+        if canonical in storage.index.projects:
+            project = Project(name=canonical)
+        else:
+            return None
+
+    project.status = ProjectStatus(status)
+    storage.save_project(project)
+    return project

@@ -300,8 +300,11 @@ class Storage:
             
         return Project.from_frontmatter(post.metadata, post.content, file_path)
 
-    def list_projects_metadata(self) -> dict[str, Project]:
+    def list_projects_metadata(self, status: Optional[str] = None) -> dict[str, Project]:
         """List all projects that have rich metadata.
+
+        Args:
+            status: Optional status filter (e.g. "active", "archived", "completed")
 
         Returns:
             Dictionary mapping name to Project object
@@ -312,10 +315,45 @@ class Storage:
                 with open(file_path) as f:
                     post = frontmatter.load(f)
                     project = Project.from_frontmatter(post.metadata, post.content, file_path)
+                    if status and project.status.value != status:
+                        continue
                     projects[project.name] = project
             except Exception:
                 continue
         return projects
+
+    def get_project_items(self, project_name: str) -> tuple[list[Note], list[Task]]:
+        """Get all notes and tasks belonging to a project.
+
+        Args:
+            project_name: Project name
+
+        Returns:
+            Tuple of (notes sorted newest first, tasks sorted by due date then priority)
+        """
+        canonical = self.get_canonical_project(project_name)
+        ids = self.index.projects.get(canonical, [])
+
+        notes_list = []
+        tasks_list = []
+        for item_id in ids:
+            if item_id in self.index.notes:
+                note = self.load_note(item_id)
+                if note:
+                    notes_list.append(note)
+            elif item_id in self.index.tasks:
+                task = self.load_task(item_id)
+                if task:
+                    tasks_list.append(task)
+
+        notes_list.sort(key=lambda n: n.created_at, reverse=True)
+        tasks_list.sort(
+            key=lambda t: (
+                t.due_date or datetime.max,
+                ["low", "medium", "high", "urgent"].index(t.priority.value),
+            )
+        )
+        return notes_list, tasks_list
 
     def get_canonical_project(self, project_name: str) -> str:
         """Get normalized (lowercase) project name.
