@@ -517,6 +517,11 @@ def list_tasks_cmd(status, tags, project, assignee, search):
         console.print("[dim]No tasks found.[/dim]")
         return
 
+    _print_task_table(task_list)
+
+
+def _print_task_table(task_list):
+    """Render a list of tasks as a Rich table."""
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("ID", style="dim", width=8)
     table.add_column("Priority", width=8)
@@ -526,12 +531,10 @@ def list_tasks_cmd(status, tags, project, assignee, search):
     table.add_column("Due", width=12)
 
     for task in task_list:
-        # Priority color
         priority_colors = {"low": "green", "medium": "yellow", "high": "orange1", "urgent": "red"}
         priority_color = priority_colors.get(task.priority.value, "white")
         priority_text = f"[{priority_color}]{task.priority.value.upper()}[/{priority_color}]"
 
-        # Due date
         due_text = task.due_date.strftime("%Y-%m-%d") if task.due_date else "-"
         if task.is_overdue():
             due_text = f"[red]{due_text}[/red]"
@@ -550,7 +553,125 @@ def list_tasks_cmd(status, tags, project, assignee, search):
     console.print(f"\n[dim]Total: {len(task_list)} tasks[/dim]\n")
 
 
-# ... today/week/done commands ... 
+@task.command(name="search")
+@click.argument("query", nargs=-1)
+@click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "done", "blocked"]))
+@click.option("--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]))
+@click.option("--project", "--proj", help="Filter by project")
+@click.option("--tags", "-t", multiple=True, help="Filter by tags")
+@click.option("--due", "-d", help="Filter by due date (today, overdue, week, or YYYY-MM-DD)")
+@click.option("--assignee", "-a", help="Filter by assignee")
+def search_task_cmd(query, status, priority, project, tags, due, assignee):
+    """Search tasks with fuzzy matching and filters.
+
+    With QUERY: shows matching tasks as a table.
+    Without QUERY: interactive fuzzy-filterable list.
+    """
+    import questionary
+    from datetime import timedelta
+
+    query_str = " ".join(query) if query else None
+    has_filters = any([status, priority, project, tags, due, assignee])
+
+    # Get base task list
+    if query_str:
+        task_list = tasks.search_tasks(query_str)
+    else:
+        task_list = tasks.list_tasks(
+            status=status,
+            tags=list(tags) if tags else None,
+            project=project,
+        )
+        # If no query and no filters, default to non-complete tasks
+        if not has_filters:
+            task_list = [t for t in task_list if t.status != TaskStatus.DONE]
+
+    # Apply filters (on search results, or additional filters beyond list_tasks)
+    if query_str and status:
+        task_list = [t for t in task_list if t.status.value == status]
+    if query_str and tags:
+        tag_set = set(tags)
+        task_list = [t for t in task_list if tag_set.issubset(set(t.tags))]
+    if query_str and project:
+        task_list = [t for t in task_list if t.project and t.project.lower() == project.lower()]
+    if priority:
+        task_list = [t for t in task_list if t.priority.value == priority]
+    if assignee:
+        task_list = [t for t in task_list if t.assignee and t.assignee.lower() == assignee.lower()]
+    if due:
+        now = datetime.now()
+        filtered = []
+        for t in task_list:
+            if not t.due_date:
+                continue
+            if due == "today" and t.due_date.date() == now.date():
+                filtered.append(t)
+            elif due == "overdue" and t.is_overdue():
+                filtered.append(t)
+            elif due == "week" and t.due_date.date() <= (now + timedelta(days=7)).date():
+                filtered.append(t)
+            else:
+                try:
+                    target = datetime.strptime(due, "%Y-%m-%d").date()
+                    if t.due_date.date() == target:
+                        filtered.append(t)
+                except ValueError:
+                    pass
+        task_list = filtered
+
+    if not task_list:
+        console.print("[dim]No tasks found.[/dim]")
+        return
+
+    # Direct mode: print table
+    if query_str:
+        _print_task_table(task_list)
+        return
+
+    # Interactive mode: fuzzy select
+    choices = []
+    for t in task_list:
+        priority_abbr = t.priority.value[0].upper()
+        due_str = f" due:{t.due_date.strftime('%m-%d')}" if t.due_date else ""
+        label = f"{t.id[:6]}  {priority_abbr}  [{t.status.value}]  {t.title}{due_str}"
+        choices.append(questionary.Choice(title=label, value=t.id))
+
+    selected_id = questionary.select(
+        "Search tasks (type to filter):",
+        choices=choices,
+        use_search_filter=True,
+        use_jk_keys=False,
+    ).ask()
+
+    if not selected_id:
+        return
+
+    selected_task = tasks.get_task(selected_id)
+    if not selected_task:
+        console.print(f"[red]Task {selected_id} not found.[/red]")
+        return
+
+    # Display task details (same as show_task)
+    console.print(f"\n[bold cyan]{selected_task.title}[/bold cyan]")
+    console.print(f"[dim]ID: {selected_task.id}[/dim]")
+    console.print(f"Status: {selected_task.status.value}")
+    console.print(f"Priority: {selected_task.priority.value}")
+    if selected_task.assignee:
+        console.print(f"Assignee: [bold yellow]{selected_task.assignee}[/bold yellow]")
+    if selected_task.due_date:
+        console.print(f"Due: {selected_task.due_date.strftime('%Y-%m-%d %H:%M')}")
+    if selected_task.tags:
+        console.print(f"Tags: {', '.join(selected_task.tags)}")
+    if selected_task.project:
+        console.print(f"Project: {selected_task.project}")
+    console.print()
+    if selected_task.description:
+        md = Markdown(selected_task.description)
+        console.print(md)
+    console.print()
+
+
+# ... today/week/done commands ...
 
 @task.command(name="show")
 @click.argument("task_id", required=False)
