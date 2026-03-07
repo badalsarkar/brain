@@ -284,35 +284,93 @@ def delete_note(note_id):
 # ============================================================================
 
 
-@cli.command()
-@click.argument("title", required=False)
-@click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
-@click.option("--description", "-d", help="Task description")
-@click.option("--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]), default="medium")
-@click.option("--due", help="Due date (e.g., 'tomorrow', 'next friday', '2024-01-15')")
-@click.option("--tags", "-t", multiple=True, help="Tags for the task")
-@click.option("--project", help="Project name")
-@click.option("--assign", "-a", help="Assign task to a person")
-def task(title, interactive, description, priority, due, tags, project, assign):
-    """Create a new task."""
-    if interactive:
-        # Interactive mode
-        title = click.prompt("Title")
-        description = click.edit() or ""
-        priority = click.prompt(
-            "Priority",
-            type=click.Choice(["low", "medium", "high", "urgent"]),
-            default="medium",
-        )
-        due = click.prompt("Due date (optional)", default="")
-        tags_input = click.prompt("Tags (comma-separated)", default="")
-        project = click.prompt("Project (optional)", default="")
-        assign = click.prompt("Assignee (optional)", default="")
+TASK_ALIASES = {
+    "view": "show",
+}
 
-        tags = [t.strip() for t in tags_input.split(",") if t.strip()]
-    elif not title:
-        console.print("[red]Error: Provide a title or use --interactive[/red]")
-        sys.exit(1)
+
+class TaskAliasGroup(click.Group):
+    """Group that supports command aliases."""
+
+    def get_command(self, ctx, cmd_name):
+        cmd_name = TASK_ALIASES.get(cmd_name, cmd_name)
+        return super().get_command(ctx, cmd_name)
+
+
+@cli.group(cls=TaskAliasGroup)
+def task():
+    """Manage tasks."""
+    pass
+
+
+def _create_task_interactive():
+    """Interactive task creation with pick-what-you-need menu."""
+    import questionary
+
+    title = questionary.text("Title:").ask()
+    if not title:
+        console.print("[red]Title is required.[/red]")
+        return
+
+    description = ""
+    priority = "medium"
+    due = None
+    tags = []
+    project = None
+    assign = None
+
+    while True:
+        fields = questionary.checkbox(
+            "Set optional fields (space to select, enter to continue):",
+            choices=[
+                questionary.Choice("Priority", value="priority"),
+                questionary.Choice("Due date", value="due"),
+                questionary.Choice("Tags", value="tags"),
+                questionary.Choice("Project", value="project"),
+                questionary.Choice("Assignee", value="assign"),
+                questionary.Choice("Description (editor)", value="description"),
+            ],
+        ).ask()
+
+        if fields is None:
+            return
+
+        if "priority" in fields:
+            priority = questionary.select(
+                "Priority:", choices=["low", "medium", "high", "urgent"], default="medium"
+            ).ask() or "medium"
+        if "due" in fields:
+            due = questionary.text("Due date:").ask() or None
+        if "tags" in fields:
+            tags_input = questionary.text("Tags (comma-separated):").ask() or ""
+            tags = [t.strip() for t in tags_input.split(",") if t.strip()]
+        if "project" in fields:
+            project = questionary.text("Project:").ask() or None
+        if "assign" in fields:
+            assign = questionary.text("Assignee:").ask() or None
+        if "description" in fields:
+            description = click.edit() or ""
+        break
+
+    _create_task(title, description, priority, due, tuple(tags), project, assign)
+
+
+def _create_task(title, description, priority, due, tags, project, assign):
+    """Shared task creation logic with compact output."""
+    from brain.shorthand import parse_shorthand
+
+    parsed = parse_shorthand(title)
+    title = parsed["title"]
+    if parsed["priority"] and priority == "medium":
+        priority = parsed["priority"]
+    if parsed["project"] and not project:
+        project = parsed["project"]
+    if parsed["tags"] and not tags:
+        tags = tuple(parsed["tags"])
+    if parsed["due"] and not due:
+        due = parsed["due"]
+    if parsed["assignee"] and not assign:
+        assign = parsed["assignee"]
 
     created_task = tasks.create_task(
         title=title,
@@ -324,55 +382,136 @@ def task(title, interactive, description, priority, due, tags, project, assign):
         assignee=assign or None,
     )
 
-    console.print(f"\n[bold green]✓ Task created![/bold green]")
-    console.print(f"ID: {created_task.id}")
-    console.print(f"Title: {created_task.title}")
-    console.print(f"Priority: {created_task.priority.value}")
-    if created_task.assignee:
-        console.print(f"Assignee: {created_task.assignee}")
+    # Compact output
+    parts = [f"[bold green]Task #{created_task.id} created[/bold green]"]
+    priority_colors = {"low": "green", "medium": "yellow", "high": "orange1", "urgent": "red"}
+    pc = priority_colors.get(created_task.priority.value, "white")
+    parts.append(f"[{pc}]{created_task.priority.value.upper()}[/{pc}]")
+    if created_task.project:
+        parts.append(f"@{created_task.project}")
     if created_task.due_date:
-        console.print(f"Due: {created_task.due_date.strftime('%Y-%m-%d')}")
-    console.print()
+        parts.append(f"~{created_task.due_date.strftime('%Y-%m-%d')}")
+    if created_task.tags:
+        parts.append(" ".join(f"#{t}" for t in created_task.tags))
+    if created_task.assignee:
+        parts.append(f">{created_task.assignee}")
+    console.print("  ".join(parts))
 
 
-@cli.group()
-def tasks_group():
-    """Manage tasks."""
-    pass
+@task.command(name="create")
+@click.argument("titles", nargs=-1)
+@click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
+@click.option(
+    "--file", "-f", "input_file", type=click.Path(exists=True), help="Batch: read tasks from file"
+)
+@click.option("--batch", "-b", is_flag=True, help="Batch: create multiple tasks")
+def create_task_cmd(titles, interactive, input_file, batch):
+    """Create tasks (single, interactive, or batch).
+
+    \b
+    Usage:
+      brain task create "title ^high @project #tag ~fri"          Single task
+      brain task create -i                                        Interactive mode
+      brain task create -b "task one ^high" "task two @proj"      Batch inline
+      brain task create -f tasks.txt                              Batch from file
+
+    \b
+    Shorthand syntax (inline in title):
+      ^priority   ^low ^medium ^high ^urgent ^crit  (or ! instead of ^)
+      @project    @webapp @backend
+      #tag        #bug #auth (multiple allowed)
+      ~due        ~today ~tod ~tomorrow ~tmrw
+                  ~mon ~tue ~wed ~thu ~fri ~sat ~sun
+                  ~1d ~2d ~3d ~1w ~2w ~1m
+                  ~nw (next week) ~nm (next month)
+                  ~eow (end of week) ~eom (end of month)
+                  ~2024-03-15 ~"next friday"
+      >assignee   >alice >bob
+    """
+    if interactive:
+        _create_task_interactive()
+        return
+
+    if input_file:
+        with open(input_file) as f:
+            lines = f.read().splitlines()
+        count = 0
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            _create_task(line, "", "medium", None, (), None, None)
+            count += 1
+        if count > 1:
+            console.print(f"\n[bold green]{count} tasks created[/bold green]")
+        return
+
+    if batch:
+        if not titles:
+            console.print("[red]Provide task titles as arguments with -b.[/red]")
+            console.print('[dim]Example: brain task create -b "Task one" "Task two ^high"[/dim]')
+            sys.exit(1)
+        for title in titles:
+            _create_task(title, "", "medium", None, (), None, None)
+        if len(titles) > 1:
+            console.print(f"\n[bold green]{len(titles)} tasks created[/bold green]")
+        return
+
+    if not sys.stdin.isatty() and not titles:
+        lines = sys.stdin.read().splitlines()
+        count = 0
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            _create_task(line, "", "medium", None, (), None, None)
+            count += 1
+        if count > 1:
+            console.print(f"\n[bold green]{count} tasks created[/bold green]")
+        return
+
+    if len(titles) == 1:
+        _create_task(titles[0], "", "medium", None, (), None, None)
+        return
+
+    if len(titles) > 1:
+        console.print("[yellow]Multiple titles given. Use -b for batch mode.[/yellow]")
+        sys.exit(1)
+
+    # No args — show help
+    ctx = click.get_current_context()
+    click.echo(ctx.get_help())
 
 
-cli.add_command(tasks_group, name="tasks")
+# Keep `brain tasks` as alias
+cli.add_command(task, name="tasks")
 
 
-@tasks_group.command(name="list")
+@task.command(name="list")
 @click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "done", "blocked"]))
 @click.option("--tags", "-t", multiple=True, help="Filter by tags")
 @click.option("--project", "-p", help="Filter by project")
 @click.option("--assignee", "-a", help="Filter by assignee")
-def list_tasks_cmd(status, tags, project, assignee):
+@click.option("--search", "-q", help="Fuzzy search tasks")
+def list_tasks_cmd(status, tags, project, assignee, search):
     """List all tasks."""
-    # Note: filtering logic needs to be updated in tasks.py/storage.py
-    # For now, just fetching all and filtering in memory or updating list_tasks
-    # But user didn't explicitly ask for list filtering, just "search everything related to Jhon"
-    # which we will handle with a specialized command. 
-    # For standard list, let's keep it simple or implement the filtering if easy.
-    # To save complexity step, I will filter here manually if assignee is passed,
-    # or rely on search. Actually, let's add filtering support to list_tasks in next step if needed.
-    
-    # Simple manual filtering for now strictly for list output
-    all_tasks = tasks.list_tasks(
-        status=status,
-        tags=list(tags) if tags else None,
-        project=project,
-    )
-    
-    task_list = []
-    if assignee:
-        for t in all_tasks:
-            if t.assignee and t.assignee.lower() == assignee.lower():
-                task_list.append(t)
+    if search:
+        task_list = tasks.search_tasks(search)
+        if status:
+            task_list = [t for t in task_list if t.status.value == status]
     else:
-        task_list = all_tasks
+        all_tasks = tasks.list_tasks(
+            status=status,
+            tags=list(tags) if tags else None,
+            project=project,
+        )
+        task_list = []
+        if assignee:
+            for t in all_tasks:
+                if t.assignee and t.assignee.lower() == assignee.lower():
+                    task_list.append(t)
+        else:
+            task_list = all_tasks
 
     if not task_list:
         console.print("[dim]No tasks found.[/dim]")
@@ -413,7 +552,7 @@ def list_tasks_cmd(status, tags, project, assignee):
 
 # ... today/week/done commands ... 
 
-@tasks_group.command(name="show")
+@task.command(name="show")
 @click.argument("task_id", required=False)
 def show_task(task_id):
     """Show task details."""
@@ -472,7 +611,7 @@ import shutil
 
 # ... existing code ...
 
-@tasks_group.command(name="edit")
+@task.command(name="edit")
 @click.argument("task_id")
 @click.option("--title", help="New title")
 @click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "done", "blocked"]))
@@ -546,7 +685,7 @@ def edit_task(task_id, title, status, priority, due, tags, project, assign, desc
 
 
 
-@tasks_group.command(name="complete")
+@task.command(name="done")
 @click.argument("task_id", required=False)
 def complete_task_cmd(task_id):
     """Mark a task as complete."""
@@ -590,6 +729,60 @@ def complete_task_cmd(task_id):
 
     console.print(f"[bold green]✓ Task marked as complete![/bold green]")
     console.print(f"[dim]{updated_task.title}[/dim]")
+
+
+
+@task.command(name="delete")
+@click.argument("task_ids", nargs=-1)
+@click.option("--all", "delete_all", is_flag=True, help="Delete all tasks")
+@click.option("--done", "delete_done", is_flag=True, help="Delete all completed tasks")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+def delete_task_cmd(task_ids, delete_all, delete_done, yes):
+    """Delete one or more tasks.
+
+    \b
+    brain task delete 3          # delete task #3
+    brain task delete 1 2 3      # delete multiple
+    brain task delete --done     # delete all completed tasks
+    brain task delete --all      # delete everything
+    """
+    storage = get_storage()
+
+    if delete_all:
+        ids = list(storage.index.tasks.keys())
+        label = f"all {len(ids)} tasks"
+    elif delete_done:
+        ids = [
+            tid for tid, data in storage.index.tasks.items()
+            if data.get("status") == "done"
+        ]
+        label = f"{len(ids)} completed tasks"
+    elif task_ids:
+        ids = list(task_ids)
+        label = f"{len(ids)} task(s)"
+    else:
+        console.print("[red]Provide task ID(s), --done, or --all.[/red]")
+        sys.exit(1)
+
+    if not ids:
+        console.print("[dim]No matching tasks found.[/dim]")
+        return
+
+    if not yes:
+        if not click.confirm(f"Delete {label}?"):
+            console.print("[dim]Cancelled.[/dim]")
+            return
+
+    deleted = 0
+    for tid in ids:
+        if tasks.delete_task(tid):
+            deleted += 1
+        else:
+            console.print(f"[yellow]Task {tid} not found.[/yellow]")
+
+    console.print(f"[bold green]Deleted {deleted} task(s)[/bold green]")
+
+
 
 
 @cli.command()

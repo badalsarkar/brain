@@ -48,7 +48,7 @@ pip install -e ".[dev]"
 
 4. **Create a task:**
    ```bash
-   brain task "Finish project documentation" --due tomorrow --priority high
+   brain task create "Finish project documentation ~tmrw ^high"
    ```
 
 5. **Check your focus view:**
@@ -119,25 +119,28 @@ brain notes delete <note-id>
 
 ```bash
 # Create task
-brain task "Do something" --due tomorrow --priority high
+brain task create "Do something ~tmrw ^high"
 
 # Interactive mode
-brain task --interactive
+brain task create -i
+
+# Batch create
+brain task create -b "Task one" "Task two ^high"
 
 # List tasks
-brain tasks list
-brain tasks list --status todo
-brain tasks list --project myproject
+brain task list
+brain task list --status todo
+brain task list --project myproject
 
 # Time-based views
-brain tasks today
-brain tasks week
+brain task today
+brain task week
 
 # Mark as done
-brain tasks done <task-id>
+brain task done <task-id>
 
 # Show task details
-brain tasks show <task-id>
+brain task show <task-id>
 ```
 
 ### Focus & Productivity
@@ -197,7 +200,7 @@ brain focus
 brain note "Idea: Add dark mode to the app" --tags idea,feature
 
 # Add a task from a meeting
-brain task "Review PR #123" --due today --priority high --project backend
+brain task create "Review PR #123 ~today ^high @backend"
 
 # End of day: Mark tasks as done
 brain tasks done abc123

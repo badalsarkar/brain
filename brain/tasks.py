@@ -195,6 +195,20 @@ def list_tasks(
     return tasks
 
 
+def search_tasks(query: str) -> list[Task]:
+    """Search tasks by fuzzy matching title and description.
+
+    Args:
+        query: Search query
+
+    Returns:
+        List of matching tasks
+    """
+    storage = get_storage()
+    _, matched_tasks = storage.search_all(query=query)
+    return matched_tasks
+
+
 def get_tasks_by_timeframe(timeframe: str = "today") -> list[Task]:
     """Get tasks by timeframe.
 

@@ -1,6 +1,7 @@
 """Storage operations for notes and tasks."""
 
 import json
+from difflib import SequenceMatcher
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -10,6 +11,39 @@ import frontmatter
 from brain.config import get_config
 from brain.models import Note, Task, MetadataIndex, Project
 from brain.git_utils import get_git_manager
+
+
+def _fuzzy_match(query: str, text: str, threshold: float = 0.6) -> bool:
+    """Check if query fuzzy-matches text.
+
+    Tries exact substring first, then multi-word matching, then SequenceMatcher.
+    """
+    query_lower = query.lower()
+    text_lower = text.lower()
+
+    # Exact substring
+    if query_lower in text_lower:
+        return True
+
+    # Multi-word: all query words must appear (in any order)
+    words = query_lower.split()
+    if len(words) > 1 and all(w in text_lower for w in words):
+        return True
+
+    # SequenceMatcher fuzzy match
+    ratio = SequenceMatcher(None, query_lower, text_lower).ratio()
+    if ratio >= threshold:
+        return True
+
+    # Check if query is a fuzzy substring of text (sliding window)
+    qlen = len(query_lower)
+    if qlen > 0 and qlen <= len(text_lower):
+        for i in range(len(text_lower) - qlen + 1):
+            window = text_lower[i : i + qlen]
+            if SequenceMatcher(None, query_lower, window).ratio() >= threshold:
+                return True
+
+    return False
 
 
 class Storage:
@@ -132,6 +166,18 @@ class Storage:
 
         return Note.from_frontmatter(post.metadata, post.content, file_path)
 
+    def _next_task_id(self) -> str:
+        """Compute the next sequential task ID."""
+        max_id = 0
+        for tid in self.index.tasks:
+            try:
+                num = int(tid)
+                if num > max_id:
+                    max_id = num
+            except ValueError:
+                continue
+        return str(max_id + 1)
+
     def save_task(self, task: Task) -> Path:
         """Save task to file system.
 
@@ -141,6 +187,10 @@ class Storage:
         Returns:
             Path where task was saved
         """
+        # Assign sequential ID for new tasks
+        if task.id == "0":
+            task.id = self._next_task_id()
+
         # Update timestamp
         task.updated_at = datetime.now()
 
@@ -674,16 +724,15 @@ class Storage:
             if task:
                 tasks.append(task)
 
-        # Filter by query if provided
+        # Filter by query if provided (fuzzy matching)
         if query:
-            query_lower = query.lower()
             notes = [
                 n for n in notes
-                if query_lower in n.title.lower() or query_lower in n.content.lower()
+                if _fuzzy_match(query, n.title) or _fuzzy_match(query, n.content)
             ]
             tasks = [
                 t for t in tasks
-                if query_lower in t.title.lower() or query_lower in t.description.lower()
+                if _fuzzy_match(query, t.title) or _fuzzy_match(query, t.description)
             ]
 
         # Sort results

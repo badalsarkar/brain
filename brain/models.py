@@ -124,7 +124,7 @@ class Note(BaseModel):
 class Task(BaseModel):
     """Task model."""
 
-    id: str = Field(default_factory=lambda: uuid4().hex[:8])
+    id: str = Field(default="0")
     title: str
     description: str = ""
     status: TaskStatus = TaskStatus.TODO
