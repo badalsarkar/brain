@@ -6,56 +6,133 @@ from typing import Optional
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.text import Text
 
 from brain.ai.factory import get_ai_provider
 from brain.models import Task
-from brain.tasks import get_tasks_by_timeframe, list_tasks
+from brain.tasks import (
+    get_tasks_by_timeframe,
+    get_unscheduled_important_tasks,
+    get_blocked_tasks,
+    list_tasks,
+)
 
 
-def show_focus_view(use_ai: bool = True) -> None:
-    """Display focus view dashboard.
+def compute_focus_score(task: Task) -> int:
+    """Compute a numeric focus score for ranking tasks.
 
-    Args:
-        use_ai: Whether to include AI suggestions
+    Higher score = more important to focus on.
     """
+    score = 0
+
+    # Priority weight
+    priority_scores = {"urgent": 40, "high": 30, "medium": 20, "low": 10}
+    score += priority_scores.get(task.priority.value, 10)
+
+    # Due date urgency
+    days = task.days_until_due()
+    if days is None:
+        score += 5  # no due date — mild bump so it's not zero
+    elif days < 0:
+        score += 30  # overdue
+    elif days == 0:
+        score += 20  # today
+    elif days == 1:
+        score += 15  # tomorrow
+    elif days <= 7:
+        score += 10  # this week
+
+    # Staleness — how long has the task been sitting around
+    age_days = (datetime.now() - task.created_at).days
+    score += min(age_days, 15)
+
+    # In-progress momentum bonus
+    if task.status.value == "in-progress":
+        score += 5
+
+    return score
+
+
+def show_focus_view(
+    use_ai: bool = True,
+    project: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    top_n: Optional[int] = None,
+    timeframe: str = "week",
+    show_blocked: bool = False,
+) -> None:
+    """Display focus view dashboard."""
     console = Console()
 
-    # Get tasks by timeframe
-    overdue = get_tasks_by_timeframe("overdue")
-    today = get_tasks_by_timeframe("today")
-    this_week = get_tasks_by_timeframe("week")
+    # Header
+    console.print("\n[bold cyan]🎯 Focus View[/bold cyan]")
+    filters = []
+    if project:
+        filters.append(f"project: {project}")
+    if tags:
+        filters.append(f"tags: {', '.join(tags)}")
+    if filters:
+        console.print(f"[dim]Filtered by {' | '.join(filters)}[/dim]")
+    console.print()
 
-    # Display header
-    console.print("\n[bold cyan]🎯 Focus View[/bold cyan]\n")
+    filter_kwargs = {"project": project, "tags": tags}
 
-    # Overdue tasks (high priority)
-    if overdue:
-        console.print("[bold red]⚠️  Overdue Tasks[/bold red]")
-        _display_task_table(console, overdue)
+    # Gather sections
+    overdue = get_tasks_by_timeframe("overdue", **filter_kwargs)
+    today = get_tasks_by_timeframe("today", **filter_kwargs)
+
+    # Period tasks (deduplicated against overdue + today)
+    timeframe_labels = {"today": None, "week": "This Week", "month": "This Month", "all": "All"}
+    period_label = timeframe_labels.get(timeframe)
+    this_period = []
+    if period_label:
+        raw = get_tasks_by_timeframe(timeframe, **filter_kwargs)
+        seen_ids = {t.id for t in overdue + today}
+        this_period = [t for t in raw if t.id not in seen_ids]
+
+    # Unscheduled high-priority tasks
+    unscheduled = get_unscheduled_important_tasks(**filter_kwargs)
+
+    # Blocked tasks
+    blocked = get_blocked_tasks(**filter_kwargs) if show_blocked else []
+
+    # Sort each section by focus score
+    for section in [overdue, today, this_period, unscheduled, blocked]:
+        section.sort(key=compute_focus_score, reverse=True)
+
+    # Display sections
+    sections = [
+        (overdue, "[bold red]⚠️  Overdue Tasks[/bold red]"),
+        (today, "[bold yellow]📅 Today[/bold yellow]"),
+    ]
+    if period_label:
+        sections.append((this_period, f"[bold green]📆 {period_label}[/bold green]"))
+    sections.append((unscheduled, "[bold orange1]🔥 Unscheduled High Priority[/bold orange1]"))
+    if show_blocked:
+        sections.append((blocked, "[dim bold]🚫 Blocked[/dim bold]"))
+
+    any_shown = False
+    for task_list, header in sections:
+        if not task_list:
+            continue
+        any_shown = True
+        console.print(header)
+        display_list = task_list
+        if top_n and len(task_list) > top_n:
+            display_list = task_list[:top_n]
+            _display_task_table(console, display_list)
+            console.print(f"[dim](showing top {top_n} of {len(task_list)})[/dim]")
+        else:
+            _display_task_table(console, display_list)
         console.print()
 
-    # Today's tasks
-    if today:
-        console.print("[bold yellow]📅 Today[/bold yellow]")
-        _display_task_table(console, today)
-        console.print()
-
-    # This week's tasks
-    if this_week:
-        console.print("[bold green]📆 This Week[/bold green]")
-        _display_task_table(console, this_week)
-        console.print()
-
-    # No tasks
-    if not overdue and not today and not this_week:
+    if not any_shown:
         console.print("[dim]No upcoming tasks. You're all caught up! 🎉[/dim]\n")
 
     # AI suggestions
     if use_ai:
         ai = get_ai_provider()
         if ai.is_available():
-            all_tasks = overdue + today + this_week
+            all_tasks = overdue + today + this_period + unscheduled
             if all_tasks:
                 console.print("[bold magenta]🤖 AI Suggestions[/bold magenta]")
                 suggestion = ai.suggest_focus(all_tasks)
@@ -64,22 +141,15 @@ def show_focus_view(use_ai: bool = True) -> None:
                 console.print()
 
 
-def _display_task_table(console: Console, tasks: list[Task]) -> None:
+def _display_task_table(console: Console, tasks: list[Task], dim: bool = False) -> None:
     """Display tasks in a formatted table.
 
     Args:
         console: Rich console
-        tasks: List of tasks to display
+        tasks: List of tasks to display (assumed pre-sorted)
+        dim: Whether to dim the entire table (for blocked tasks)
     """
-    # Sort tasks: Priority (Urgent->Low), Due Date (Ascending), Title (A-Z)
-    priority_map = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
-    tasks.sort(key=lambda t: (
-        priority_map.get(t.priority.value, 4),
-        t.due_date.timestamp() if t.due_date else datetime.max.timestamp(),
-        t.title
-    ))
-
-    table = Table(show_header=True, header_style="bold")
+    table = Table(show_header=True, header_style="bold", style="dim" if dim else None)
     table.add_column("ID", style="dim", width=8)
     table.add_column("Priority", width=8)
     table.add_column("Title", style="bold")
@@ -105,9 +175,9 @@ def _display_task_table(console: Console, tasks: list[Task]) -> None:
                 if days_until < 0:
                     due_text = f"[red]{task.due_date.strftime('%m/%d')}[/red]"
                 elif days_until == 0:
-                    due_text = f"[yellow]Today[/yellow]"
+                    due_text = "[yellow]Today[/yellow]"
                 elif days_until == 1:
-                    due_text = f"[yellow]Tomorrow[/yellow]"
+                    due_text = "[yellow]Tomorrow[/yellow]"
                 else:
                     due_text = task.due_date.strftime("%m/%d")
             else:

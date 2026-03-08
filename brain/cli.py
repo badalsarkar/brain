@@ -3,7 +3,6 @@
 import os
 import shutil
 import sys
-from pathlib import Path
 from datetime import datetime
 
 import click
@@ -12,14 +11,12 @@ from rich.markdown import Markdown
 from rich.table import Table
 
 from brain import __version__
-from brain.config import get_config, reload_config
+from brain.config import get_config
 from brain.storage import get_storage
 from brain.git_utils import get_git_manager
 from brain import notes, tasks, projects as projects_mod
-from brain.models import TaskStatus, TaskPriority, ProjectStatus
-from brain.utils import parse_date
+from brain.models import TaskStatus
 from brain.focus import show_focus_view, show_stats
-
 
 console = Console()
 
@@ -66,7 +63,7 @@ def init():
     console.print(f"\n[bold green]✓ Workspace initialized successfully![/bold green]\n")
     console.print(f"Data directory: {config.brain_data_dir}")
     console.print(f"AI Provider: {config.ai_provider}")
-    console.print(f"\nTry: [bold]brain note \"My first note\"[/bold]\n")
+    console.print(f'\nTry: [bold]brain note "My first note"[/bold]\n')
 
 
 # ============================================================================
@@ -147,7 +144,9 @@ def _create_note_from_template(template_name, title, tags, category, project, no
     merged_category = category or tmpl_meta.get("category")
     merged_project = project or tmpl_meta.get("project")
 
-    _create_note(title, body, tuple(merged_tags), merged_category, merged_project, no_ai, merged_type)
+    _create_note(
+        title, body, tuple(merged_tags), merged_category, merged_project, no_ai, merged_type
+    )
 
 
 def _fuzzy_select_note(prompt="Select a note:", note_list=None):
@@ -212,7 +211,9 @@ def note():
     pass
 
 
-cli.add_command(click.Group(name="notes", commands=note.commands, help="Manage notes.", hidden=True))
+cli.add_command(
+    click.Group(name="notes", commands=note.commands, help="Manage notes.", hidden=True)
+)
 
 
 @note.command(name="create")
@@ -615,9 +616,12 @@ def _create_task_interactive():
             return
 
         if "priority" in fields:
-            priority = questionary.select(
-                "Priority:", choices=["low", "medium", "high", "urgent"], default="medium"
-            ).ask() or "medium"
+            priority = (
+                questionary.select(
+                    "Priority:", choices=["low", "medium", "high", "urgent"], default="medium"
+                ).ask()
+                or "medium"
+            )
         if "due" in fields:
             due = questionary.text("Due date:").ask() or None
         if "tags" in fields:
@@ -763,7 +767,9 @@ def create_task_cmd(titles, interactive, input_file, batch):
 
 
 # Keep `brain tasks` as alias
-cli.add_command(click.Group(name="tasks", commands=task.commands, help="Manage tasks.", hidden=True))
+cli.add_command(
+    click.Group(name="tasks", commands=task.commands, help="Manage tasks.", hidden=True)
+)
 
 
 @task.command(name="list")
@@ -832,7 +838,9 @@ def _print_task_table(task_list):
     console.print(f"\n[dim]Total: {len(task_list)} tasks[/dim]\n")
 
 
-def _apply_task_filters(task_list, status=None, priority=None, project=None, tags=None, due=None, assignee=None):
+def _apply_task_filters(
+    task_list, status=None, priority=None, project=None, tags=None, due=None, assignee=None
+):
     """Apply optional filters to a task list."""
     if status:
         task_list = [t for t in task_list if t.status.value == status]
@@ -847,6 +855,7 @@ def _apply_task_filters(task_list, status=None, priority=None, project=None, tag
         task_list = [t for t in task_list if t.assignee and t.assignee.lower() == assignee.lower()]
     if due:
         from datetime import timedelta
+
         now = datetime.now()
         filtered = []
         for t in task_list:
@@ -909,8 +918,6 @@ def search_task_cmd(query, status, priority, project, tags, due, assignee):
     With QUERY: shows matching tasks as a table.
     Without QUERY: interactive fuzzy-filterable list.
     """
-    import questionary
-
     query_str = " ".join(query) if query else None
     has_filters = any([status, priority, project, tags, due, assignee])
 
@@ -919,8 +926,13 @@ def search_task_cmd(query, status, priority, project, tags, due, assignee):
         task_list = tasks.search_tasks(query_str)
         # Apply all filters on search results
         task_list = _apply_task_filters(
-            task_list, status=status, priority=priority, project=project,
-            tags=tags, due=due, assignee=assignee,
+            task_list,
+            status=status,
+            priority=priority,
+            project=project,
+            tags=tags,
+            due=due,
+            assignee=assignee,
         )
     else:
         task_list = tasks.list_tasks(
@@ -933,7 +945,10 @@ def search_task_cmd(query, status, priority, project, tags, due, assignee):
             task_list = [t for t in task_list if t.status != TaskStatus.DONE]
         # Apply filters not handled by list_tasks
         task_list = _apply_task_filters(
-            task_list, priority=priority, assignee=assignee, due=due,
+            task_list,
+            priority=priority,
+            assignee=assignee,
+            due=due,
         )
 
     if not task_list:
@@ -978,6 +993,7 @@ def search_task_cmd(query, status, priority, project, tags, due, assignee):
 
 # ... today/week/done commands ...
 
+
 @task.command(name="show")
 @click.argument("task_id", required=False)
 @click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "done", "blocked"]))
@@ -991,8 +1007,12 @@ def show_task(task_id, status, priority, project, tags, due, assignee):
     if not task_id:
         has_filters = any([status, priority, project, tags, due, assignee])
         if has_filters:
-            task_list = tasks.list_tasks(status=status, tags=list(tags) if tags else None, project=project)
-            task_list = _apply_task_filters(task_list, priority=priority, assignee=assignee, due=due)
+            task_list = tasks.list_tasks(
+                status=status, tags=list(tags) if tags else None, project=project
+            )
+            task_list = _apply_task_filters(
+                task_list, priority=priority, assignee=assignee, due=due
+            )
         else:
             task_list = None
         task_id = _fuzzy_select_task("Show task (type to filter):", task_list)
@@ -1038,8 +1058,12 @@ def edit_task(task_id, status, priority, project, tags, due, assignee):
     if not task_id:
         has_filters = any([status, priority, project, tags, due, assignee])
         if has_filters:
-            task_list = tasks.list_tasks(status=status, tags=list(tags) if tags else None, project=project)
-            task_list = _apply_task_filters(task_list, priority=priority, assignee=assignee, due=due)
+            task_list = tasks.list_tasks(
+                status=status, tags=list(tags) if tags else None, project=project
+            )
+            task_list = _apply_task_filters(
+                task_list, priority=priority, assignee=assignee, due=due
+            )
         else:
             task_list = None
         task_id = _fuzzy_select_task("Edit task (type to filter):", task_list)
@@ -1069,7 +1093,6 @@ def edit_task(task_id, status, priority, project, tags, due, assignee):
     console.print(f"[bold green]✓ Task {task_id} updated![/bold green]")
 
 
-
 @task.command(name="done")
 @click.argument("task_id", required=False)
 @click.option("--status", "-s", type=click.Choice(["todo", "in-progress", "blocked"]))
@@ -1081,7 +1104,9 @@ def edit_task(task_id, status, priority, project, tags, due, assignee):
 def complete_task_cmd(task_id, status, priority, project, tags, due, assignee):
     """Mark a task as complete."""
     if not task_id:
-        pending = tasks.list_tasks(status=status, tags=list(tags) if tags else None, project=project)
+        pending = tasks.list_tasks(
+            status=status, tags=list(tags) if tags else None, project=project
+        )
         pending = [t for t in pending if t.status != TaskStatus.DONE]
         pending = _apply_task_filters(pending, priority=priority, assignee=assignee, due=due)
         task_id = _fuzzy_select_task("Complete task (type to filter):", pending)
@@ -1099,7 +1124,6 @@ def complete_task_cmd(task_id, status, priority, project, tags, due, assignee):
     console.print(f"[dim]{updated_task.title}[/dim]")
 
 
-
 @task.command(name="delete")
 @click.argument("task_ids", nargs=-1)
 @click.option("--all", "delete_all", is_flag=True, help="Delete all tasks")
@@ -1111,7 +1135,9 @@ def complete_task_cmd(task_id, status, priority, project, tags, due, assignee):
 @click.option("--tags", "-t", multiple=True, help="Filter by tags")
 @click.option("--due", "-d", help="Filter by due date")
 @click.option("--assignee", "-a", help="Filter by assignee")
-def delete_task_cmd(task_ids, delete_all, delete_done, yes, status, priority, project, tags, due, assignee):
+def delete_task_cmd(
+    task_ids, delete_all, delete_done, yes, status, priority, project, tags, due, assignee
+):
     """Delete one or more tasks.
 
     \b
@@ -1126,19 +1152,20 @@ def delete_task_cmd(task_ids, delete_all, delete_done, yes, status, priority, pr
         ids = list(storage.index.tasks.keys())
         label = f"all {len(ids)} tasks"
     elif delete_done:
-        ids = [
-            tid for tid, data in storage.index.tasks.items()
-            if data.get("status") == "done"
-        ]
+        ids = [tid for tid, data in storage.index.tasks.items() if data.get("status") == "done"]
         label = f"{len(ids)} completed tasks"
     elif task_ids:
         ids = list(task_ids)
         label = f"{len(ids)} task(s)"
     else:
-        task_list = tasks.list_tasks(status=status, tags=list(tags) if tags else None, project=project)
+        task_list = tasks.list_tasks(
+            status=status, tags=list(tags) if tags else None, project=project
+        )
         task_list = _apply_task_filters(task_list, priority=priority, assignee=assignee, due=due)
         has_filters = any([status, priority, project, tags, due, assignee])
-        selected_id = _fuzzy_select_task("Delete task (type to filter):", task_list if has_filters else None)
+        selected_id = _fuzzy_select_task(
+            "Delete task (type to filter):", task_list if has_filters else None
+        )
         if not selected_id:
             return
         ids = [selected_id]
@@ -1163,14 +1190,12 @@ def delete_task_cmd(task_ids, delete_all, delete_done, yes, status, priority, pr
     console.print(f"[bold green]Deleted {deleted} task(s)[/bold green]")
 
 
-
-
 @cli.command()
 @click.argument("person")
 @click.argument("message")
 def feedback(person, message):
     """Add feedback for a person.
-    
+
     Creates a note tagged with the person's name and categorized as 'feedback'.
     """
     note = notes.create_note(
@@ -1178,7 +1203,7 @@ def feedback(person, message):
         content=message,
         category="feedback",
         tags=[person],
-        project="people-management"
+        project="people-management",
     )
     console.print(f"[bold green]✓ Feedback recorded for {person}![/bold green]")
 
@@ -1209,7 +1234,7 @@ def team_add(name, role, email):
         content=content.strip() or f"Profile for {name}",
         category="person",
         tags=[],
-        extra=extra
+        extra=extra,
     )
     console.print(f"[bold green]✓ Team member '{name}' added![/bold green]")
 
@@ -1219,28 +1244,29 @@ def team_list():
     """List all team members."""
     storage = get_storage()
     team_notes = []
-    
+
     # Scan notes for category='person'
     if "person" in storage.index.categories:
         ids = storage.index.categories["person"]
         for nid in ids:
             n = storage.load_note(nid)
-            if n: team_notes.append(n)
-            
+            if n:
+                team_notes.append(n)
+
     if not team_notes:
         console.print("[dim]No team members found.[/dim]")
         return
-        
+
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Name", style="bold")
     table.add_column("Role")
     table.add_column("Email")
-    
+
     for p in team_notes:
         role = p.extra.get("role", "-")
         email = p.extra.get("email", "-")
         table.add_row(p.title, role, email)
-        
+
     console.print(table)
 
 
@@ -1250,27 +1276,30 @@ def team_show(name):
     """Show all info related to a person (Tasks & Notes)."""
     # 1. Search Tasks assigned to person
     storage = get_storage()
-    
+
     # 1. Assignee tasks
     assigned_tasks = []
     if name in storage.index.assignees:
         for tid in storage.index.assignees[name]:
             t = storage.load_task(tid)
-            if t: assigned_tasks.append(t)
-            
+            if t:
+                assigned_tasks.append(t)
+
     # 2. Tagged items (notes and tasks)
     tagged_notes = []
     tagged_tasks = []
-    
+
     if name in storage.index.tags:
         ids = storage.index.tags[name]
         for item_id in ids:
             n = storage.load_note(item_id)
-            if n: tagged_notes.append(n)
-            
+            if n:
+                tagged_notes.append(n)
+
             t = storage.load_task(item_id)
-            if t: tagged_tasks.append(t)
-            
+            if t:
+                tagged_tasks.append(t)
+
     # Quick check for Person Profile Note
     profile_note = None
     if "person" in storage.index.categories:
@@ -1280,19 +1309,19 @@ def team_show(name):
             if n and n.title.lower() == name.lower():
                 profile_note = n
                 break
-            
+
     # Merge tasks (avoid duplicates if task is both assigned AND tagged)
     unique_tasks = {t.id: t for t in assigned_tasks + tagged_tasks}
-    
+
     console.print(f"\n[bold cyan]👤 Person: {name}[/bold cyan]\n")
-    
+
     if profile_note:
         if "role" in profile_note.extra:
             console.print(f"Role: {profile_note.extra['role']}")
         if "email" in profile_note.extra:
             console.print(f"Email: {profile_note.extra['email']}")
         console.print()
-    
+
     # Assigned Tasks
     console.print(f"[bold]Assigned Tasks / Related Tasks:[/bold]")
     if not unique_tasks:
@@ -1302,7 +1331,7 @@ def team_show(name):
         table.add_column("State", width=12)
         table.add_column("Title", style="bold")
         table.add_column("Due", width=12)
-        
+
         sorted_tasks = sorted(unique_tasks.values(), key=lambda t: t.due_date or datetime.max)
         for t in sorted_tasks:
             relation = "Assigned" if t.assignee == name else "Tagged"
@@ -1311,17 +1340,17 @@ def team_show(name):
             if status == "done":
                 status = f"[green]{status}[/green]"
             elif status == "urgent":
-                 status = f"[red]{status}[/red]"
-                 
+                status = f"[red]{status}[/red]"
+
             table.add_row(
                 f"{status} ({relation})",
                 t.title[:50],
-                t.due_date.strftime("%Y-%m-%d") if t.due_date else "-"
+                t.due_date.strftime("%Y-%m-%d") if t.due_date else "-",
             )
         console.print(table)
-        
+
     console.print()
-    
+
     # Related Notes (Feedback, etc)
     console.print(f"[bold]Related Notes & Feedback:[/bold]")
     if not tagged_notes:
@@ -1331,18 +1360,14 @@ def team_show(name):
         table.add_column("Category", width=12)
         table.add_column("Title", style="bold")
         table.add_column("Date", width=12)
-        
+
         sorted_notes = sorted(tagged_notes, key=lambda n: n.created_at, reverse=True)
         for n in sorted_notes:
             # Skip the profile note itself from related notes to avoid recursion visual
             if profile_note and n.id == profile_note.id:
                 continue
-                
-            table.add_row(
-                n.category,
-                n.title[:50],
-                n.created_at.strftime("%Y-%m-%d")
-            )
+
+            table.add_row(n.category, n.title[:50], n.created_at.strftime("%Y-%m-%d"))
         console.print(table)
     console.print()
 
@@ -1411,9 +1436,28 @@ def search(query, tags, project):
 
 @cli.command()
 @click.option("--no-ai", is_flag=True, help="Disable AI suggestions")
-def focus(no_ai):
+@click.option("--project", "-p", default=None, help="Filter by project")
+@click.option("--tag", "-t", multiple=True, help="Filter by tag (repeatable)")
+@click.option("--top", "-n", "top_n", type=int, default=None, help="Show top N tasks per section")
+@click.option(
+    "--timeframe",
+    "-tf",
+    type=click.Choice(["today", "week", "month", "all"], case_sensitive=False),
+    default="week",
+    help="Lookahead timeframe (default: week)",
+)
+@click.option("--blocked", "-b", is_flag=True, help="Show blocked tasks section")
+def focus(no_ai, project, tag, top_n, timeframe, blocked):
     """Show focus view dashboard."""
-    show_focus_view(use_ai=not no_ai)
+    tags = list(tag) if tag else None
+    show_focus_view(
+        use_ai=not no_ai,
+        project=project,
+        tags=tags,
+        top_n=top_n,
+        timeframe=timeframe,
+        show_blocked=blocked,
+    )
 
 
 @cli.command()
@@ -1459,7 +1503,9 @@ def sync():
 
 
 @cli.group(invoke_without_command=True)
-@click.option("--sort", type=click.Choice(["name", "count"]), default="count", help="Sort by name or count")
+@click.option(
+    "--sort", type=click.Choice(["name", "count"]), default="count", help="Sort by name or count"
+)
 @click.pass_context
 def tags(ctx, sort):
     """Manage tags (list, rename, delete)."""
@@ -1480,7 +1526,7 @@ def tags(ctx, sort):
                     notes_count += 1
                 elif item_id in storage.index.tasks:
                     tasks_count += 1
-            
+
             tag_data.append((tag, notes_count, tasks_count, len(ids)))
 
         # Sort
@@ -1511,7 +1557,9 @@ def tags_rename(old_name, new_name):
     storage = get_storage()
     count = storage.rename_tag(old_name, new_name)
     if count > 0:
-        console.print(f"[bold green]✓ Renamed tag '{old_name}' to '{new_name}' in {count} items[/bold green]")
+        console.print(
+            f"[bold green]✓ Renamed tag '{old_name}' to '{new_name}' in {count} items[/bold green]"
+        )
     else:
         console.print(f"[yellow]Tag '{old_name}' not found or no items updated.[/yellow]")
 
@@ -1536,9 +1584,19 @@ def project():
 
 
 @project.command(name="list")
-@click.option("--all", "-a", "show_all", is_flag=True, help="Show all projects including archived/completed")
-@click.option("--status", "-s", type=click.Choice(["active", "archived", "completed"]), default=None, help="Filter by status")
-@click.option("--sort", type=click.Choice(["name", "count"]), default="count", help="Sort by name or count")
+@click.option(
+    "--all", "-a", "show_all", is_flag=True, help="Show all projects including archived/completed"
+)
+@click.option(
+    "--status",
+    "-s",
+    type=click.Choice(["active", "archived", "completed"]),
+    default=None,
+    help="Filter by status",
+)
+@click.option(
+    "--sort", type=click.Choice(["name", "count"]), default="count", help="Sort by name or count"
+)
 def project_list(show_all, status, sort):
     """List projects."""
     storage = get_storage()
@@ -1613,7 +1671,9 @@ def project_rename(old_name, new_name):
     storage = get_storage()
     count = storage.rename_project(old_name, new_name)
     if count > 0:
-        console.print(f"[bold green]✓ Renamed project '{old_name}' to '{new_name}' in {count} items[/bold green]")
+        console.print(
+            f"[bold green]✓ Renamed project '{old_name}' to '{new_name}' in {count} items[/bold green]"
+        )
     else:
         console.print(f"[yellow]Project '{old_name}' not found or no items updated.[/yellow]")
 
@@ -1795,6 +1855,7 @@ def project_edit(name):
     proj = storage.get_project(canonical_name)
     if not proj:
         from brain.models import Project
+
         proj = Project(name=canonical_name, description="")
 
     new_description = click.edit(proj.description)
@@ -1807,7 +1868,9 @@ def project_edit(name):
 
 
 # Add 'projects' as a hidden alias for 'project'
-cli.add_command(click.Group(name="projects", commands=project.commands, help=project.help, hidden=True))
+cli.add_command(
+    click.Group(name="projects", commands=project.commands, help=project.help, hidden=True)
+)
 
 
 def main():

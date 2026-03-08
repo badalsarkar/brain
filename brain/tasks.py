@@ -183,11 +183,7 @@ def list_tasks(
         List of tasks
     """
     storage = get_storage()
-    tasks = storage.list_tasks(
-        status=status,
-        tags=tags,
-        project=project
-    )
+    tasks = storage.list_tasks(status=status, tags=tags, project=project)
 
     if limit:
         tasks = tasks[:limit]
@@ -209,17 +205,25 @@ def search_tasks(query: str) -> list[Task]:
     return matched_tasks
 
 
-def get_tasks_by_timeframe(timeframe: str = "today") -> list[Task]:
+def get_tasks_by_timeframe(
+    timeframe: str = "today",
+    project: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+) -> list[Task]:
     """Get tasks by timeframe.
 
     Args:
         timeframe: "today", "week", "month", or "overdue"
+        project: Optional project filter
+        tags: Optional tags filter
 
     Returns:
         List of tasks
     """
     storage = get_storage()
-    all_tasks = storage.list_tasks(status="todo") + storage.list_tasks(status="in-progress")
+    all_tasks = storage.list_tasks(status="todo", project=project, tags=tags) + storage.list_tasks(
+        status="in-progress", project=project, tags=tags
+    )
 
     now = datetime.now()
     filtered_tasks = []
@@ -236,10 +240,48 @@ def get_tasks_by_timeframe(timeframe: str = "today") -> list[Task]:
                 filtered_tasks.append(task)
         elif timeframe == "month":
             from dateutil.relativedelta import relativedelta
+
             if task.due_date and task.due_date <= now + relativedelta(months=1):
                 filtered_tasks.append(task)
 
     return filtered_tasks
+
+
+def get_unscheduled_important_tasks(
+    project: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+) -> list[Task]:
+    """Get urgent/high priority tasks with no due date.
+
+    Args:
+        project: Optional project filter
+        tags: Optional tags filter
+
+    Returns:
+        List of tasks
+    """
+    storage = get_storage()
+    all_tasks = storage.list_tasks(status="todo", project=project, tags=tags) + storage.list_tasks(
+        status="in-progress", project=project, tags=tags
+    )
+    return [t for t in all_tasks if t.priority.value in ("urgent", "high") and t.due_date is None]
+
+
+def get_blocked_tasks(
+    project: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+) -> list[Task]:
+    """Get blocked tasks.
+
+    Args:
+        project: Optional project filter
+        tags: Optional tags filter
+
+    Returns:
+        List of tasks
+    """
+    storage = get_storage()
+    return storage.list_tasks(status="blocked", project=project, tags=tags)
 
 
 def extract_tasks_from_note(note_content: str) -> list[str]:
