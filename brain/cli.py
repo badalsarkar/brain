@@ -431,12 +431,13 @@ def search_notes_cmd(query, tags, category, project, limit):
 
 
 @note.command(name="edit")
-@click.argument("note_id", required=False)
+@click.argument("note_id_or_title", required=False, metavar="[NOTE_ID_OR_TITLE]")
 @click.option("--tags", "-t", multiple=True, help="Filter by tags")
 @click.option("--category", "-c", help="Filter by category")
 @click.option("--project", "-p", help="Filter by project")
-def edit_note(note_id, tags, category, project):
-    """Edit a note in your editor."""
+def edit_note(note_id_or_title, tags, category, project):
+    """Edit a note in your editor by ID or title."""
+    note_id = note_id_or_title
     if not note_id:
         has_filters = any([tags, category, project])
         if has_filters:
@@ -451,8 +452,42 @@ def edit_note(note_id, tags, category, project):
 
     n = notes.get_note(note_id)
 
+    # If not found by ID, try fuzzy match by title
     if not n:
-        console.print(f"[red]Note {note_id} not found.[/red]")
+        from difflib import SequenceMatcher
+
+        all_notes = notes.list_notes(
+            tags=list(tags) if tags else None, category=category, project=project
+        )
+        query = note_id.lower()
+        scored = []
+        for candidate in all_notes:
+            title_lower = candidate.title.lower()
+            if query in title_lower:
+                scored.append((candidate, 1.0))
+            else:
+                ratio = SequenceMatcher(None, query, title_lower).ratio()
+                if ratio > 0.4:
+                    scored.append((candidate, ratio))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        if not scored:
+            console.print(f"[red]No note matching '{note_id}' found.[/red]")
+            sys.exit(1)
+        elif len(scored) == 1:
+            n = scored[0][0]
+        else:
+            matched_notes = [s[0] for s in scored]
+            selected = _fuzzy_select_note(
+                prompt=f"Multiple matches for '{note_id}':", note_list=matched_notes
+            )
+            if not selected:
+                return
+            n = notes.get_note(selected)
+
+    if not n:
+        console.print(f"[red]Note '{note_id}' not found.[/red]")
         sys.exit(1)
 
     if not n.file_path or not n.file_path.exists():
@@ -1849,7 +1884,11 @@ def project_archive(name):
 @click.argument("name")
 @click.option("--note", "-n", default=None, help="Edit a note within the project")
 def project_edit(name, note):
-    """Edit project description, or a specific note with --note."""
+    """Edit project description or a specific note by title.
+
+    Without --note, opens the project description for editing.
+    With --note, finds the matching note in the project and opens it in your editor.
+    """
     storage = get_storage()
     canonical_name = storage.get_canonical_project(name)
 
