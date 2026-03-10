@@ -19,11 +19,21 @@ Terminal-based note-taking and work management system with AI integration.
 ## Installation
 
 ```bash
-cd /home/bsarkar/Documents/code/brain
+git clone <repo-url>
+cd brain
 pip install -e .
 ```
 
-For development:
+This installs `brain` as a command you can run from anywhere in your terminal.
+
+> **Tip:** Use a virtual environment to avoid polluting your global Python:
+> ```bash
+> python -m venv .venv
+> source .venv/bin/activate   # Linux/macOS
+> pip install -e .
+> ```
+
+For development (includes pytest, black, ruff, mypy):
 ```bash
 pip install -e ".[dev]"
 ```
