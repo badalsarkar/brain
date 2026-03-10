@@ -1847,10 +1847,63 @@ def project_archive(name):
 
 @project.command(name="edit")
 @click.argument("name")
-def project_edit(name):
-    """Edit project description."""
+@click.option("--note", "-n", default=None, help="Edit a note within the project")
+def project_edit(name, note):
+    """Edit project description, or a specific note with --note."""
     storage = get_storage()
     canonical_name = storage.get_canonical_project(name)
+
+    if note:
+        project_notes, _ = storage.get_project_items(canonical_name)
+        if not project_notes:
+            console.print(f"[yellow]No notes found in project '{canonical_name}'.[/yellow]")
+            return
+
+        # Fuzzy/substring match against note titles
+        from difflib import SequenceMatcher
+
+        query = note.lower()
+        scored = []
+        for n in project_notes:
+            title_lower = n.title.lower()
+            if query in title_lower:
+                scored.append((n, 1.0))
+            else:
+                ratio = SequenceMatcher(None, query, title_lower).ratio()
+                if ratio > 0.4:
+                    scored.append((n, ratio))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        if not scored:
+            console.print(f"[red]No notes matching '{note}' in project '{canonical_name}'.[/red]")
+            return
+
+        if len(scored) == 1:
+            note_id = scored[0][0].id
+        else:
+            matched_notes = [s[0] for s in scored]
+            note_id = _fuzzy_select_note(
+                prompt=f"Multiple matches for '{note}':", note_list=matched_notes
+            )
+            if not note_id:
+                return
+
+        matched = notes.get_note(note_id)
+        if not matched or not matched.file_path or not matched.file_path.exists():
+            console.print("[red]Error: Note file not found on disk.[/red]")
+            return
+
+        editor = "nvim" if shutil.which("nvim") else None
+        if not editor and not os.environ.get("EDITOR"):
+            console.print("[yellow]NVIM not found and EDITOR not set. Using default.[/yellow]")
+
+        click.edit(filename=str(matched.file_path), editor=editor)
+
+        updated_note = storage._read_note_file(matched.file_path)
+        storage.save_note(updated_note)
+        console.print(f"[bold green]✓ Note '{matched.title}' updated![/bold green]")
+        return
 
     proj = storage.get_project(canonical_name)
     if not proj:
